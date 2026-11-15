@@ -97,6 +97,7 @@ function createDatabase() {
       const created = {
         id: `session-${state.nextId++}`,
         createdAt: NOW,
+        lastSeenAt: NOW,
         revokedAt: null,
         ...structuredClone(data),
       };
@@ -282,7 +283,14 @@ test("unknown email and incorrect password return the same error", async () => {
   });
 
   assert.equal(wrongPassword.status, 401);
-  assert.deepEqual(await unknownEmail.json(), await wrongPassword.json());
+  const wrongBody = await wrongPassword.json();
+  const unknownBody = await unknownEmail.json();
+  assert.equal(unknownBody.success, false);
+  assert.equal(wrongBody.success, false);
+  assert.equal(unknownBody.error.code, wrongBody.error.code);
+  assert.equal(unknownBody.error.message, wrongBody.error.message);
+  assert.equal(typeof unknownBody.error.requestId, "string");
+  assert.equal(typeof wrongBody.error.requestId, "string");
 });
 
 test("login rejects inactive accounts after credential verification", async () => {
@@ -292,6 +300,34 @@ test("login rejects inactive accounts after credential verification", async () =
 
   assert.equal(response.status, 403);
   assert.equal(body.error.code, "ACCOUNT_DISABLED");
+});
+
+test("login rejects stale password hashes before issuing a session", async () => {
+  const database = createDatabase();
+  const originalPasswordHash = database.state.users[0].passwordHash;
+  const app = createApp({
+    prisma: database.prisma,
+    authConfig: { accessTokenSecret: ACCESS_TOKEN_SECRET },
+    authOptions: {
+      verifyPasswordFn: async (password, passwordHash) => {
+        if (password === "correct-password" && passwordHash === originalPasswordHash) {
+          database.state.users[0].passwordHash = "$argon2id$rotated-hash";
+          return true;
+        }
+        return false;
+      },
+      hashPasswordFn: async () => "$argon2id$dummy-hash",
+      now: () => new Date(NOW),
+    },
+  });
+
+  const response = await login(app);
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "PASSWORD_CHANGED");
+  assert.equal(database.state.sessions.length, 0);
+  assert.equal(database.state.refreshTokens.length, 0);
 });
 
 test("malformed JSON and unknown fields return validation errors", async () => {
@@ -318,7 +354,8 @@ test("malformed JSON and unknown fields return validation errors", async () => {
 });
 
 test("rate limits repeated login attempts without exposing account state", async () => {
-  const { app } = createFixture();
+  let timestamp = new Date(NOW);
+  const { app } = createFixture({ now: () => new Date(timestamp) });
   const responses = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
     responses.push(await app.request("/api/v1/auth/login", {
@@ -335,7 +372,55 @@ test("rate limits repeated login attempts without exposing account state", async
     responses.map((response) => response.status),
     [401, 401, 401, 401, 401, 429],
   );
-  assert.equal((await responses[5].json()).error.code, "RATE_LIMITED");
+  const limitedBody = await responses[5].json();
+  assert.equal(limitedBody.error.code, "RATE_LIMITED");
+  assert.equal(responses[5].headers.get("retry-after"), "900");
+  assert.match(limitedBody.error.message, /15 menit/);
+
+  timestamp = new Date(timestamp.getTime() + 60 * 1000);
+  const stillLimited = await login(app);
+  assert.equal(stillLimited.status, 429);
+  assert.equal(stillLimited.headers.get("retry-after"), "840");
+
+  timestamp = new Date(timestamp.getTime() + 14 * 60 * 1000);
+  const afterCooldown = await login(app);
+  assert.equal(afterCooldown.status, 200);
+});
+
+test("successful login resets failed attempts and logout can be followed by immediate login", async () => {
+  const { app } = createFixture();
+  const invalidLogin = () =>
+    app.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "crew@seroo.test",
+        password: "wrong-password",
+      }),
+    });
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    assert.equal((await invalidLogin()).status, 401);
+  }
+
+  const firstLogin = await login(app);
+  assert.equal(firstLogin.status, 200);
+  const firstBody = await firstLogin.json();
+  const logoutResponse = await app.request("/api/v1/auth/logout", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refreshToken: firstBody.data.refreshToken }),
+  });
+  assert.equal(logoutResponse.status, 200);
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    assert.equal((await login(app)).status, 200);
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assert.equal((await invalidLogin()).status, 401);
+  }
+  assert.equal((await invalidLogin()).status, 429);
 });
 
 test("me requires an active bearer session and returns outlet memberships", async () => {
@@ -360,6 +445,60 @@ test("me requires an active bearer session and returns outlet memberships", asyn
   assert.equal("role" in body.data.user, false);
   assert.equal("passwordHash" in body.data.user, false);
   assert.equal(body.data.session.id, credentials.data.session.id);
+});
+
+test("login enforces the active-session cap for Manager accounts", async () => {
+  const { app, state } = createFixture();
+
+  const firstLogin = await login(app);
+  const firstBody = await firstLogin.json();
+  const secondSession = {
+    id: "session-2",
+    userId: "user-1",
+    expiresAt: new Date(NOW.getTime() + 30 * 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    lastSeenAt: NOW,
+    createdAt: NOW,
+  };
+  state.sessions.push(secondSession);
+  state.refreshTokens.push({
+    id: "refresh-2",
+    sessionId: secondSession.id,
+    tokenHash: "hash-2",
+    issuedAt: NOW,
+    usedAt: null,
+    revokedAt: null,
+  });
+
+  const thirdLogin = await login(app);
+  const thirdBody = await thirdLogin.json();
+  const activeSessions = state.sessions.filter(
+    (session) => session.userId === "user-1" && session.revokedAt === null,
+  );
+  const revokedSessions = state.sessions.filter(
+    (session) => session.userId === "user-1" && session.revokedAt !== null,
+  );
+
+  assert.equal(thirdLogin.status, 200);
+  assert.equal(activeSessions.length, 2);
+  assert.equal(revokedSessions.length, 1);
+  assert.equal(thirdBody.data.session.id, activeSessions[activeSessions.length - 1].id);
+});
+
+test("idle sessions are revoked after 30 minutes of inactivity", async () => {
+  const { app, state } = createFixture();
+  const loginResponse = await login(app);
+  const loginBody = await loginResponse.json();
+  const session = state.sessions.find((item) => item.id === loginBody.data.session.id);
+  session.lastSeenAt = new Date(NOW.getTime() - 31 * 60 * 1000);
+
+  const response = await app.request("/api/v1/auth/me", {
+    headers: { authorization: `Bearer ${loginBody.data.accessToken}` },
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error.code, "SESSION_REVOKED");
+  assert.ok(state.sessions.find((item) => item.id === session.id).revokedAt);
 });
 
 test("refresh rotates token while preserving the original session expiry", async () => {

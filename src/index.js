@@ -12,11 +12,13 @@ const app = createApp({
   authConfig: {
     accessTokenSecret: env.JWT_ACCESS_SECRET,
   },
+  corsOrigins: env.CORS_ORIGINS,
 });
 
 const server = serve({
   fetch: app.fetch,
   port: env.PORT,
+  ...(env.NODE_ENV === "development" ? { hostname: "0.0.0.0" } : {}),
 });
 
 console.info(`Seroo API listening on port ${env.PORT}`);

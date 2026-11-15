@@ -9,12 +9,18 @@ import {
 } from "./tokens.js";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_ABSOLUTE_LIMIT_MS = {
+  CREW: 12 * 60 * 60 * 1000,
+  DEFAULT: SESSION_TTL_MS,
+};
 
 const userProfileSelect = {
   id: true,
   name: true,
   email: true,
   isActive: true,
+  mustChangePassword: true,
   memberships: {
     where: { outlet: { isActive: true } },
     select: {
@@ -35,6 +41,7 @@ function publicUser(user) {
     id: user.id,
     name: user.name,
     email: user.email,
+    mustChangePassword: user.mustChangePassword === true,
     memberships: user.memberships.map((membership) => ({
       outletId: membership.outletId,
       outletCode: membership.outlet.code,
@@ -49,6 +56,24 @@ function sessionDto(session) {
   return {
     id: session.id,
     expiresAt,
+  };
+}
+
+function resolveSessionPolicy(user) {
+  const roles = new Set((user.memberships ?? []).map((membership) => membership.role));
+
+  if (roles.has("CREW")) {
+    return {
+      maxActiveSessions: 1,
+      absoluteLifetimeMs: SESSION_ABSOLUTE_LIMIT_MS.CREW,
+      idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
+    };
+  }
+
+  return {
+    maxActiveSessions: 2,
+    absoluteLifetimeMs: SESSION_ABSOLUTE_LIMIT_MS.DEFAULT,
+    idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
   };
 }
 
@@ -95,14 +120,62 @@ export function createAuthService({
 
   async function createSession(user, deviceName) {
     const issuedAt = now();
-    const expiresAt = new Date(issuedAt.getTime() + SESSION_TTL_MS);
+    const policy = resolveSessionPolicy(user);
+    const expiresAt = new Date(issuedAt.getTime() + policy.absoluteLifetimeMs);
     const refreshToken = createRefreshToken();
+
     const session = await prisma.$transaction(async (tx) => {
+      const latestUser = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, passwordHash: true, isActive: true },
+      });
+
+      if (!latestUser) {
+        throw new AuthError(
+          "ACCOUNT_DISABLED",
+          403,
+          "Akun tidak aktif. Hubungi administrator.",
+        );
+      }
+
+      if (!latestUser.isActive) {
+        throw new AuthError(
+          "ACCOUNT_DISABLED",
+          403,
+          "Akun tidak aktif. Hubungi administrator.",
+        );
+      }
+
+      if (latestUser.passwordHash !== user.passwordHash) {
+        throw new AuthError(
+          "PASSWORD_CHANGED",
+          409,
+          "Password akun berubah. Silakan masuk kembali.",
+        );
+      }
+
+      const activeSessions = tx.authSession.findMany
+        ? await tx.authSession.findMany({
+            where: { userId: user.id, revokedAt: null },
+            select: { id: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          })
+        : [];
+
+      const overflow = activeSessions.length - policy.maxActiveSessions;
+      if (overflow >= 0) {
+        const sessionsToRevoke = activeSessions.slice(0, overflow + 1);
+        for (const sessionToRevoke of sessionsToRevoke) {
+          await revokeSession(tx, sessionToRevoke.id, issuedAt);
+        }
+      }
+
       const created = await tx.authSession.create({
         data: {
           userId: user.id,
           deviceName: deviceName ?? null,
           expiresAt,
+          lastSeenAt: issuedAt,
         },
       });
 
@@ -209,6 +282,11 @@ export function createAuthService({
         return { error: "REFRESH_TOKEN_REUSE_DETECTED" };
       }
 
+      await tx.authSession.updateMany({
+        where: { id: session.id, revokedAt: null },
+        data: { lastSeenAt: refreshedAt },
+      });
+
       await tx.refreshToken.create({
         data: {
           sessionId: session.id,
@@ -263,6 +341,84 @@ export function createAuthService({
     return publicUser(user);
   }
 
+  async function changePassword({
+    userId,
+    sessionId,
+    currentPassword,
+    newPassword,
+  }) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, passwordHash: true, isActive: true },
+    });
+
+    if (!user || !user.isActive) {
+      throw new AuthError(
+        "ACCOUNT_DISABLED",
+        403,
+        "Akun tidak aktif. Hubungi administrator.",
+      );
+    }
+
+    if (!(await verifyPasswordFn(currentPassword, user.passwordHash))) {
+      throw new AuthError(
+        "INVALID_CURRENT_PASSWORD",
+        400,
+        "Password lama tidak sesuai.",
+      );
+    }
+
+    const passwordHash = await hashPasswordFn(newPassword);
+    const changedAt = now();
+
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: {
+          id: userId,
+          passwordHash: user.passwordHash,
+          isActive: true,
+        },
+        data: { passwordHash, mustChangePassword: false },
+      });
+
+      if (updated.count !== 1) {
+        throw new AuthError(
+          "PASSWORD_CHANGED",
+          409,
+          "Password akun berubah. Silakan coba kembali.",
+        );
+      }
+
+      const otherSessions = await tx.authSession.findMany({
+        where: { userId, id: { not: sessionId }, revokedAt: null },
+        select: { id: true },
+      });
+      const otherSessionIds = otherSessions.map((session) => session.id);
+
+      await tx.authSession.updateMany({
+        where: { userId, id: { not: sessionId }, revokedAt: null },
+        data: { revokedAt: changedAt },
+      });
+      if (otherSessionIds.length > 0) {
+        await tx.refreshToken.updateMany({
+          where: { sessionId: { in: otherSessionIds }, revokedAt: null },
+          data: { revokedAt: changedAt },
+        });
+      }
+
+      await tx.userPasswordAudit.create({
+        data: {
+          actorUserId: userId,
+          targetUserId: userId,
+          activity: "SELF_CHANGE",
+          createdAt: changedAt,
+        },
+      });
+    });
+
+    return { passwordChanged: true };
+  }
+
   async function logout({ refreshToken }) {
     const token = await prisma.refreshToken.findUnique({
       where: { tokenHash: hashRefreshToken(refreshToken) },
@@ -305,5 +461,12 @@ export function createAuthService({
     });
   }
 
-  return { login, refresh, getCurrentUser, logout, logoutAll };
+  return {
+    login,
+    refresh,
+    getCurrentUser,
+    changePassword,
+    logout,
+    logoutAll,
+  };
 }

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthError } from "./errors.js";
 import { createAuthenticationMiddleware } from "./middleware.js";
 import { createAuthService } from "./service.js";
+import { writeAuditLog } from "../audit/service.js";
 
 const loginSchema = z
   .object({
@@ -20,6 +21,13 @@ const refreshSchema = z
   .strict();
 
 const logoutSchema = refreshSchema;
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(1024),
+    newPassword: z.string().min(12).max(128),
+  })
+  .strict()
+  .refine((value) => value.currentPassword !== value.newPassword);
 
 function parseBody(schema, value) {
   const result = schema.safeParse(value);
@@ -60,19 +68,49 @@ function createRateLimiter({ limit, windowMs, maxEntries = 5000, now }) {
         }
       }
 
+      const entry = attempts.get(key);
+      return entry ? entry.count < limit : attempts.size < maxEntries;
+    },
+    recordFailure(key) {
+      const timestamp = now();
+      for (const [storedKey, entry] of attempts) {
+        if (entry.resetAt <= timestamp) {
+          attempts.delete(storedKey);
+        }
+      }
+
       let entry = attempts.get(key);
-      if (!entry || entry.resetAt <= timestamp) {
+      if (!entry) {
         if (attempts.size >= maxEntries) {
-          return false;
+          return;
         }
         entry = { count: 0, resetAt: timestamp + windowMs };
         attempts.set(key, entry);
       }
-
       entry.count += 1;
-      return entry.count <= limit;
+    },
+    reset(key) {
+      attempts.delete(key);
+    },
+    retryAfterSeconds(key) {
+      const entry = attempts.get(key);
+      if (entry) {
+        return Math.max(1, Math.ceil((entry.resetAt - now()) / 1000));
+      }
+
+      const nextResetAt = Math.min(
+        ...[...attempts.values()].map(({ resetAt }) => resetAt),
+      );
+      return Number.isFinite(nextResetAt)
+        ? Math.max(1, Math.ceil((nextResetAt - now()) / 1000))
+        : 1;
     },
   };
+}
+
+function retryMessage(retryAfterSeconds) {
+  const retryAfterMinutes = Math.ceil(retryAfterSeconds / 60);
+  return `Terlalu banyak percobaan. Coba lagi dalam ${retryAfterMinutes} menit.`;
 }
 
 function rateLimitKey(prefix, value) {
@@ -112,29 +150,60 @@ export function createAuthRoutes({
 
   routes.post("/login", async (c) => {
     const body = parseBody(loginSchema, await readJson(c));
-    if (!loginLimiter.allow(rateLimitKey("login", body.email))) {
+    const key = rateLimitKey("login", body.email);
+    if (!loginLimiter.allow(key)) {
+      const retryAfterSeconds = loginLimiter.retryAfterSeconds(key);
+      c.header("Retry-After", String(retryAfterSeconds));
       throw new AuthError(
         "RATE_LIMITED",
         429,
-        "Terlalu banyak percobaan. Coba lagi beberapa saat.",
+        retryMessage(retryAfterSeconds),
       );
     }
 
-    const data = await service.login(body);
+    let data;
+    try {
+      data = await service.login(body);
+    } catch (error) {
+      if (error instanceof AuthError && error.code === "INVALID_CREDENTIALS") {
+        loginLimiter.recordFailure(key);
+      }
+      throw error;
+    }
+
+    loginLimiter.reset(key);
+    await writeAuditLog(prisma, {
+      actorUserId: data.user.id,
+      sessionId: data.session.id,
+      action: "LOGIN_SUCCEEDED",
+      resourceType: "AuthSession",
+      resourceId: data.session.id,
+      metadata: { deviceNameProvided: Boolean(body.deviceName) },
+    });
     return c.json({ success: true, data }, 200);
   });
 
   routes.post("/refresh", async (c) => {
     const body = parseBody(refreshSchema, await readJson(c));
-    if (!refreshLimiter.allow(rateLimitKey("refresh", body.refreshToken))) {
+    const key = rateLimitKey("refresh", body.refreshToken);
+    if (!refreshLimiter.allow(key)) {
+      const retryAfterSeconds = refreshLimiter.retryAfterSeconds(key);
+      c.header("Retry-After", String(retryAfterSeconds));
       throw new AuthError(
         "RATE_LIMITED",
         429,
-        "Terlalu banyak permintaan. Coba lagi beberapa saat.",
+        retryMessage(retryAfterSeconds),
       );
     }
 
     const data = await service.refresh(body);
+    await writeAuditLog(prisma, {
+      sessionId: data.session.id,
+      action: "SESSION_REFRESHED",
+      resourceType: "AuthSession",
+      resourceId: data.session.id,
+      metadata: { rotated: true },
+    });
     return c.json({ success: true, data }, 200);
   });
 
@@ -162,15 +231,56 @@ export function createAuthRoutes({
     });
   });
 
+  routes.post("/change-password", authenticate, async (c) => {
+    const auth = c.get("auth");
+    const body = parseBody(
+      changePasswordSchema,
+      await readJson(c),
+    );
+    const data = await service.changePassword({
+      userId: auth.userId,
+      sessionId: auth.sessionId,
+      ...body,
+    });
+    await writeAuditLog(prisma, {
+      actorUserId: auth.userId,
+      sessionId: auth.sessionId,
+      action: "PASSWORD_CHANGED",
+      resourceType: "User",
+      resourceId: auth.userId,
+      metadata: { otherSessionsRevoked: true },
+    });
+    return c.json({ success: true, data }, 200);
+  });
+
   routes.post("/logout", async (c) => {
     const body = parseBody(logoutSchema, await readJson(c));
+    const token = await prisma.refreshToken.findUnique({
+      where: { tokenHash: createHash("sha256").update(body.refreshToken).digest("hex") },
+      select: { sessionId: true },
+    });
     const data = await service.logout(body);
+    await writeAuditLog(prisma, {
+      sessionId: token?.sessionId,
+      action: "LOGOUT_SUCCEEDED",
+      resourceType: "AuthSession",
+      resourceId: token?.sessionId,
+      metadata: { tokenRecognized: Boolean(token) },
+    });
     return c.json({ success: true, data }, 200);
   });
 
   routes.post("/logout-all", authenticate, async (c) => {
     const auth = c.get("auth");
     const data = await service.logoutAll(auth.userId);
+    await writeAuditLog(prisma, {
+      actorUserId: auth.userId,
+      sessionId: auth.sessionId,
+      action: "LOGOUT_ALL_SUCCEEDED",
+      resourceType: "User",
+      resourceId: auth.userId,
+      metadata: { revokedSessions: data.revokedSessions },
+    });
     return c.json({ success: true, data }, 200);
   });
 

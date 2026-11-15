@@ -20,6 +20,24 @@ test("health endpoint reports liveness without querying the database", async () 
   });
 });
 
+test("request ID is echoed and honors a valid client correlation ID", async () => {
+  const app = createApp({ prisma: {} });
+  const response = await app.request("/health", {
+    headers: { "x-request-id": "client-request-123" },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-request-id"), "client-request-123");
+});
+
+test("invalid request ID is replaced with a server-generated correlation ID", async () => {
+  const app = createApp({ prisma: {} });
+  const response = await app.request("/health", {
+    headers: { "x-request-id": "invalid value with spaces" },
+  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("x-request-id"), /^[0-9a-f-]{36}$/i);
+});
+
 test("database diagnostics endpoint is not exposed", async () => {
   const app = createApp({
     prisma: {

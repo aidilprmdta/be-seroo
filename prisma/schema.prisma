@@ -12,9 +12,11 @@ datasource db {
 // ==========================================
 
 enum Role {
-  CREW
-  MANAGER
+  ADMIN_PUSAT
+  OWNER_MITRA
   OWNER
+  MANAGER
+  CREW
 }
 
 enum OrderStatus {
@@ -25,11 +27,15 @@ enum OrderStatus {
 enum PaymentMethod {
   CASH
   QRIS
+  SPLIT
 }
 
 enum PaymentStatus {
   RECORDED
   PENDING_RECONCILIATION
+  BELUM_LUNAS
+  LUNAS
+  REFUNDED
 }
 
 enum StockMovementType {
@@ -49,27 +55,115 @@ enum StockRequestStatus {
   CANCELLED
 }
 
+enum ExpenseStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum ExpenseAuditAction {
+  CORRECTED
+  CANCELLED
+}
+
+enum ClosingType {
+  DAILY
+  MONTHLY
+}
+
+enum ClosingStatus {
+  CLOSED
+  REOPENED
+}
+
+enum ClosingAuditAction {
+  CLOSED
+  REOPENED
+  RECLOSED
+}
+
+enum UserPasswordActivity {
+  ADMIN_RESET
+  SELF_CHANGE
+}
+
 // ==========================================
 // USERS & OUTLETS
 // ==========================================
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  isActive           Boolean  @default(true)
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  memberships          OutletMembership[]
-  authSessions         AuthSession[]
-  orders               Order[]
-  expenses             Expense[]
-  wasteRecords         WasteRecord[]
-  stockMovements       StockMovement[]
-  requestedStockOrders StockRequest[]     @relation("RequestedBy")
-  processedStockOrders StockRequest[]     @relation("ProcessedBy")
+  memberships                  OutletMembership[]
+  authSessions                 AuthSession[]
+  passwordAuditsAsActor        UserPasswordAudit[]  @relation("UserPasswordAuditActor")
+  passwordAuditsAsTarget       UserPasswordAudit[]  @relation("UserPasswordAuditTarget")
+  orders                       Order[]
+  verifiedOrders               Order[]              @relation("OrderVerifiedBy")
+  verifiedPayments             OrderPayment[]       @relation("OrderPaymentVerifiedBy")
+  expenses                     Expense[]
+  expenseAudits                ExpenseAudit[]       @relation("ExpenseAuditActor")
+  wasteRecords                 WasteRecord[]
+  stockMovements               StockMovement[]
+  requestedStockOrders         StockRequest[]       @relation("RequestedBy")
+  processedStockOrders         StockRequest[]       @relation("ProcessedBy")
+  requestedOutletStockRequests OutletStockRequest[] @relation("OutletStockRequestCreatedBy")
+  processedOutletStockRequests OutletStockRequest[] @relation("OutletStockRequestProcessedBy")
+  closingsClosed               ClosingRecord[]      @relation("ClosingClosedBy")
+  closingsReopened             ClosingRecord[]      @relation("ClosingReopenedBy")
+  closingHistories             ClosingHistory[]     @relation("ClosingHistoryClosedBy")
+  closingAudits                ClosingAudit[]       @relation("ClosingAuditActor")
+  cashOpenings                 CashOpening[]        @relation("CashOpeningOpenedBy")
+  cancelledOrders              Order[]              @relation("OrderCancelledBy")
+  orderStatusHistories         OrderStatusHistory[] @relation("OrderStatusHistoryActor")
+  auditLogs                    AuditLog[]           @relation("AuditLogActor")
+}
+
+model UserPasswordAudit {
+  id           String               @id @default(cuid())
+  actorUserId  String
+  targetUserId String
+  activity     UserPasswordActivity
+  createdAt    DateTime             @default(now())
+
+  actor  User @relation("UserPasswordAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  target User @relation("UserPasswordAuditTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+model AuditLog {
+  id           String       @id @default(cuid())
+  actorUserId  String?
+  sessionId    String?
+  outletId     String?
+  action       String
+  resourceType String
+  resourceId   String?
+  outcome      AuditOutcome @default(SUCCESS)
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+
+  actor   User?        @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  session AuthSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  outlet  Outlet?      @relation(fields: [outletId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([outletId, createdAt])
+  @@index([resourceType, action, createdAt])
 }
 
 model AuthSession {
@@ -78,12 +172,15 @@ model AuthSession {
   deviceName String?
   expiresAt  DateTime
   revokedAt  DateTime?
+  lastSeenAt DateTime  @default(now())
   createdAt  DateTime  @default(now())
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
 
   @@index([userId, revokedAt])
+  @@index([userId, revokedAt, lastSeenAt])
 }
 
 model RefreshToken {
@@ -108,12 +205,18 @@ model Outlet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships    OutletMembership[]
-  orders         Order[]
-  expenses       Expense[]
-  stocks         OutletStock[]
-  stockMovements StockMovement[]
-  wasteRecords   WasteRecord[]
+  memberships         OutletMembership[]
+  orders              Order[]
+  expenses            Expense[]
+  expenseAudits       ExpenseAudit[]
+  stocks              OutletStock[]
+  stockMovements      StockMovement[]
+  wasteRecords        WasteRecord[]
+  outletStockRequests OutletStockRequest[]
+  closings            ClosingRecord[]
+  closingAudits       ClosingAudit[]
+  cashOpenings        CashOpening[]
+  auditLogs           AuditLog[]
 
   outgoingRequests StockRequest[] @relation("SourceOutlet")
   incomingRequests StockRequest[] @relation("DestinationOutlet")
@@ -175,29 +278,71 @@ model AddOn {
 }
 
 model Order {
-  id            String        @id @default(cuid())
-  outletId      String
-  crewId        String
-  orderNumber   String
-  status        OrderStatus   @default(COMPLETED)
-  paymentMethod PaymentMethod
-  paymentStatus PaymentStatus @default(RECORDED)
+  id                  String        @id @default(cuid())
+  outletId            String
+  crewId              String
+  orderNumber         String
+  status              OrderStatus   @default(COMPLETED)
+  paymentMethod       PaymentMethod
+  paymentStatus       PaymentStatus @default(RECORDED)
   clientTransactionId String?
-  payloadHash   String?
-  subtotal      Decimal       @db.Decimal(12, 2)
-  total         Decimal       @db.Decimal(12, 2)
-  notes         String?
-  createdAt     DateTime      @default(now())
-  completedAt   DateTime?
+  payloadHash         String?
+  subtotal            Decimal       @db.Decimal(12, 2)
+  total               Decimal       @db.Decimal(12, 2)
+  notes               String?
+  verifiedAt          DateTime?
+  verifiedById        String?
+  cancelledAt         DateTime?
+  cancelledById       String?
+  cancellationReason  String?
+  isWasteRecorded     Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  completedAt         DateTime?
 
-  outlet Outlet      @relation(fields: [outletId], references: [id])
-  crew   User        @relation(fields: [crewId], references: [id])
-  items  OrderItem[]
+  outlet        Outlet               @relation(fields: [outletId], references: [id])
+  crew          User                 @relation(fields: [crewId], references: [id])
+  verifiedBy    User?                @relation("OrderVerifiedBy", fields: [verifiedById], references: [id])
+  cancelledBy   User?                @relation("OrderCancelledBy", fields: [cancelledById], references: [id])
+  items         OrderItem[]
+  payments      OrderPayment[]
+  statusHistory OrderStatusHistory[]
 
   @@unique([outletId, orderNumber])
   @@unique([outletId, crewId, clientTransactionId])
   @@index([outletId, createdAt])
   @@index([crewId])
+}
+
+model OrderStatusHistory {
+  id         String      @id @default(cuid())
+  orderId    String
+  fromStatus OrderStatus
+  toStatus   OrderStatus
+  reason     String?
+  actorId    String
+  createdAt  DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User  @relation("OrderStatusHistoryActor", fields: [actorId], references: [id])
+
+  @@index([orderId, createdAt])
+}
+
+model OrderPayment {
+  id            String        @id @default(cuid())
+  orderId       String
+  paymentMethod PaymentMethod
+  amount        Decimal       @db.Decimal(12, 2)
+  paymentStatus PaymentStatus @default(LUNAS)
+  notes         String?
+  verifiedAt    DateTime?
+  verifiedById  String?
+  createdAt     DateTime      @default(now())
+
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  verifiedBy User? @relation("OrderPaymentVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([orderId])
 }
 
 model OrderItem {
@@ -241,20 +386,48 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
-  outletId    String
-  categoryId  String
-  createdById String
-  description String?
-  amount      Decimal  @db.Decimal(12, 2)
-  expenseDate DateTime
-  createdAt   DateTime @default(now())
+  id                  String        @id @default(cuid())
+  outletId            String
+  categoryId          String
+  createdById         String
+  clientTransactionId String?
+  payloadHash         String?
+  description         String?
+  amount              Decimal       @db.Decimal(12, 2)
+  expenseDate         DateTime
+  status              ExpenseStatus @default(ACTIVE)
+  cancelledAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   outlet    Outlet          @relation(fields: [outletId], references: [id])
   category  ExpenseCategory @relation(fields: [categoryId], references: [id])
   createdBy User            @relation(fields: [createdById], references: [id])
+  audits    ExpenseAudit[]
 
+  @@unique([outletId, createdById, clientTransactionId])
   @@index([outletId, expenseDate])
+}
+
+model ExpenseAudit {
+  id                  String             @id @default(cuid())
+  expenseId           String
+  outletId            String
+  actorId             String
+  clientTransactionId String
+  payloadHash         String
+  action              ExpenseAuditAction
+  reason              String?
+  beforeSnapshot      Json
+  afterSnapshot       Json
+  createdAt           DateTime           @default(now())
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  outlet  Outlet  @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  actor   User    @relation("ExpenseAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([outletId, actorId, clientTransactionId])
+  @@index([outletId, expenseId, createdAt])
 }
 
 // ==========================================
@@ -268,11 +441,12 @@ model InventoryItem {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  stocks       OutletStock[]
-  movements    StockMovement[]
-  requestItems StockRequestItem[]
-  recipes      RecipeItem[]
-  wasteRecords WasteRecord[]
+  stocks             OutletStock[]
+  movements          StockMovement[]
+  requestItems       StockRequestItem[]
+  outletRequestItems OutletStockRequestItem[]
+  recipes            RecipeItem[]
+  wasteRecords       WasteRecord[]
 }
 
 model OutletStock {
@@ -289,20 +463,23 @@ model OutletStock {
 }
 
 model StockMovement {
-  id              String            @id @default(cuid())
-  outletId        String
-  inventoryItemId String
-  createdById     String
-  type            StockMovementType
-  quantity        Decimal           @db.Decimal(12, 3)
-  note            String?
-  referenceCode   String?
-  createdAt       DateTime          @default(now())
+  id                  String            @id @default(cuid())
+  outletId            String
+  inventoryItemId     String
+  createdById         String
+  clientTransactionId String?
+  payloadHash         String?
+  type                StockMovementType
+  quantity            Decimal           @db.Decimal(12, 3)
+  note                String?
+  referenceCode       String?
+  createdAt           DateTime          @default(now())
 
   outlet        Outlet        @relation(fields: [outletId], references: [id])
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
   createdBy     User          @relation(fields: [createdById], references: [id])
 
+  @@unique([outletId, createdById, clientTransactionId])
   @@index([outletId, inventoryItemId, createdAt])
 }
 
@@ -339,6 +516,43 @@ model StockRequestItem {
   @@unique([stockRequestId, inventoryItemId])
 }
 
+model OutletStockRequest {
+  id                  String             @id @default(cuid())
+  outletId            String
+  requestedById       String
+  processedById       String?
+  clientTransactionId String
+  payloadHash         String
+  status              StockRequestStatus @default(PENDING)
+  note                String?
+  decisionNote        String?
+  processedAt         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  outlet      Outlet                   @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  requestedBy User                     @relation("OutletStockRequestCreatedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  processedBy User?                    @relation("OutletStockRequestProcessedBy", fields: [processedById], references: [id], onDelete: Restrict)
+  items       OutletStockRequestItem[]
+
+  @@unique([outletId, requestedById, clientTransactionId])
+  @@index([outletId, status, createdAt])
+}
+
+model OutletStockRequestItem {
+  id              String  @id @default(cuid())
+  requestId       String
+  inventoryItemId String
+  itemName        String
+  unit            String
+  quantity        Decimal @db.Decimal(12, 3)
+
+  request       OutletStockRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem      @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, inventoryItemId])
+}
+
 // ==========================================
 // RECIPE & AUTOMATIC STOCK USAGE
 // ==========================================
@@ -360,21 +574,126 @@ model RecipeItem {
 // ==========================================
 
 model WasteRecord {
-  id              String   @id @default(cuid())
-  outletId        String
-  createdById     String
-  inventoryItemId String?
-  itemName        String
-  category        String
-  quantity        Decimal  @db.Decimal(12, 3)
-  unit            String
-  description     String?
-  wasteDate       DateTime
-  createdAt       DateTime @default(now())
+  id                  String   @id @default(cuid())
+  outletId            String
+  createdById         String
+  clientTransactionId String?
+  payloadHash         String?
+  inventoryItemId     String?
+  itemName            String
+  category            String
+  quantity            Decimal  @db.Decimal(12, 3)
+  unit                String
+  description         String?
+  wasteDate           DateTime
+  createdAt           DateTime @default(now())
 
   outlet        Outlet         @relation(fields: [outletId], references: [id])
   createdBy     User           @relation(fields: [createdById], references: [id])
   inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
+  @@unique([outletId, createdById, clientTransactionId])
   @@index([outletId, wasteDate])
+}
+
+// ==========================================
+// CLOSING & REOPEN
+// ==========================================
+
+model CashOpening {
+  id          String   @id @default(cuid())
+  outletId    String
+  periodKey   String
+  openingCash Decimal  @db.Decimal(12, 2)
+  openedById  String
+  openedAt    DateTime @default(now())
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  outlet   Outlet @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  openedBy User   @relation("CashOpeningOpenedBy", fields: [openedById], references: [id], onDelete: Restrict)
+
+  @@unique([outletId, periodKey])
+  @@index([outletId, periodKey])
+}
+
+model ClosingRecord {
+  id                  String        @id @default(cuid())
+  outletId            String
+  closingType         ClosingType
+  periodKey           String
+  status              ClosingStatus @default(CLOSED)
+  closedById          String
+  closedAt            DateTime      @default(now())
+  reopenedById        String?
+  reopenedAt          DateTime?
+  reopenReason        String?
+  version             Int           @default(1)
+  summarySnapshot     Json
+  notes               String?
+  unfinishedCount     Int           @default(0)
+  openingCash         Decimal?      @db.Decimal(12, 2)
+  cashSales           Decimal?      @db.Decimal(12, 2)
+  cashExpenses        Decimal?      @db.Decimal(12, 2)
+  expectedCash        Decimal?      @db.Decimal(12, 2)
+  actualCash          Decimal?      @db.Decimal(12, 2)
+  cashDifference      Decimal?      @db.Decimal(12, 2)
+  differenceReason    String?
+  clientTransactionId String?
+  payloadHash         String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  outlet     Outlet           @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  closedBy   User             @relation("ClosingClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  reopenedBy User?            @relation("ClosingReopenedBy", fields: [reopenedById], references: [id], onDelete: Restrict)
+  history    ClosingHistory[]
+  audits     ClosingAudit[]
+
+  @@unique([outletId, closingType, periodKey])
+  @@unique([outletId, closedById, clientTransactionId])
+  @@index([outletId, closingType, periodKey])
+}
+
+model ClosingHistory {
+  id              String    @id @default(cuid())
+  closingId       String
+  version         Int
+  closedById      String
+  closedAt        DateTime
+  summarySnapshot Json
+  notes           String?
+  unfinishedCount Int       @default(0)
+  reopenedById    String?
+  reopenedAt      DateTime?
+  reopenReason    String?
+  createdAt       DateTime  @default(now())
+
+  closing  ClosingRecord @relation(fields: [closingId], references: [id], onDelete: Cascade)
+  closedBy User          @relation("ClosingHistoryClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+
+  @@index([closingId, version])
+}
+
+model ClosingAudit {
+  id                  String             @id @default(cuid())
+  closingId           String
+  outletId            String
+  actorId             String
+  clientTransactionId String
+  payloadHash         String
+  action              ClosingAuditAction
+  reason              String?
+  version             Int
+  beforeSnapshot      Json?
+  afterSnapshot       Json?
+  createdAt           DateTime           @default(now())
+
+  closing ClosingRecord @relation(fields: [closingId], references: [id], onDelete: Restrict)
+  outlet  Outlet        @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  actor   User          @relation("ClosingAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([outletId, actorId, clientTransactionId])
+  @@index([outletId, closingId, createdAt])
 }

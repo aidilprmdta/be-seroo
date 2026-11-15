@@ -13,7 +13,19 @@ test("uses local defaults and accepts a PostgreSQL URL", () => {
       PORT: 3000,
       DATABASE_URL: "postgresql://user:password@localhost:5432/sero_test",
       JWT_ACCESS_SECRET: "test-access-secret-at-least-32-characters",
+      CORS_ORIGINS: [],
     },
+  );
+});
+
+test("parses comma-separated CORS origins without exposing secrets", () => {
+  assert.deepEqual(
+    parseEnv({
+      DATABASE_URL: "postgres://user:password@localhost:5432/sero_test",
+      JWT_ACCESS_SECRET: "test-access-secret-at-least-32-characters",
+      CORS_ORIGINS: "https://admin.example, https://reports.example",
+    }).CORS_ORIGINS,
+    ["https://admin.example", "https://reports.example"],
   );
 });
 

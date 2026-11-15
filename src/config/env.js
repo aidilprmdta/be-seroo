@@ -11,6 +11,12 @@ const envSchema = z.object({
       return protocol === "postgres:" || protocol === "postgresql:";
     }, "must be a PostgreSQL connection URL"),
   JWT_ACCESS_SECRET: z.string().min(32),
+  CORS_ORIGINS: z.string().default("").transform((value) =>
+    value
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  ),
 });
 
 export function parseEnv(source) {
