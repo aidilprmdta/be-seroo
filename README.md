@@ -1,40 +1,70 @@
-# Seroo Backend AI Kit
+# Seroo Backend
 
-Dokumentasi dan skill Codex untuk mengembangkan backend aplikasi Teh Tarik Seroo.
+Backend Sistem Informasi Manajemen Operasional Teh Tarik Seroo.
 
-## Stack yang menjadi baseline
+Aplikasi backend ini dikembangkan untuk mendukung pengelolaan operasional Teh Tarik Seroo, meliputi autentikasi pengguna, pengelolaan akun dan hak akses, data outlet, katalog produk, transaksi penjualan, persediaan bahan baku, pencatatan waste, pengeluaran operasional, serta laporan.
 
-- Runtime: Node.js (gunakan LTS yang kompatibel dengan dependency project saat ini)
-- Bahasa: JavaScript (ES Modules)
-- HTTP API: Hono + `@hono/node-server`
-- Validasi input: Zod
-- ORM: Prisma ORM **6.19.3** (dipatok sementara agar konsisten dengan instalasi project saat ini)
-- Database: PostgreSQL 17
-- Pilot: satu outlet Rumbai/Jalan Sekolah; desain data mendukung banyak outlet
+## Teknologi yang Digunakan
 
-Jangan upgrade major version, mengganti ORM, atau menambah framework tanpa keputusan eksplisit.
+| Komponen | Teknologi |
+|---|---|
+| Runtime | Node.js |
+| Bahasa Pemrograman | JavaScript (ES Modules) |
+| HTTP API Framework | Hono |
+| HTTP Server | @hono/node-server |
+| Validasi Input | Zod |
+| ORM | Prisma ORM 6.19.3 |
+| Database | PostgreSQL 17 |
 
-## Cara memasang
+Sistem dirancang untuk mendukung pengelolaan banyak outlet. Pada tahap awal, implementasi dan pengujian difokuskan pada outlet pilot Rumbai/Jalan Sekolah.
 
-1. Ekstrak paket ini di luar folder project atau ke lokasi sementara.
-2. Salin `backend/AGENTS.md` ke `sero-system/backend/AGENTS.md`.
-3. Salin `docs/backend/` ke `sero-system/docs/backend/`.
-4. Salin `.agents/skills/` ke `sero-system/.agents/skills/`.
-5. Jangan menimpa `AGENTS.md` root atau skill mobile yang sudah ada. Bila root `AGENTS.md` sudah ada, gabungkan isi `integration/ROOT-AGENTS-BACKEND-SECTION.md` secara manual.
-6. Buka Codex dari root `sero-system` agar instruksi root, backend, dan skill dapat ditemukan.
+## Persyaratan Sistem
 
-## Urutan penggunaan yang disarankan
+Sebelum menjalankan backend, pastikan perangkat telah memiliki:
 
-1. Baca `docs/backend/PRD-BACKEND.md` dan `docs/backend/OPEN-DECISIONS.md`.
-2. Jalankan prompt audit read-only di `docs/backend/PROMPT-AUDIT-AWAL.md`.
-3. Minta Codex membuat laporan gap antara kode/schema saat ini dengan PRD. Jangan izinkan perubahan file dulu.
-4. Prioritaskan security model dan outlet-scoping sebelum membuat business endpoints.
-5. Implementasikan per modul kecil dan jalankan test setelah setiap perubahan.
+- Node.js versi LTS yang kompatibel dengan dependensi proyek.
+- PostgreSQL 17.
+- Package manager yang digunakan oleh proyek.
+- Git (opsional, untuk pengelolaan kode sumber).
 
-## Penting
+## Instalasi dan Konfigurasi
 
-Paket ini berisi spesifikasi dan instruksi, bukan bukti bahwa backend sudah aman atau semua fitur sudah berjalan. Codex harus memeriksa repository aktual sebelum menyimpulkan sesuatu. Jangan menjalankan `migrate reset`, `db push --force-reset`, menghapus data, atau melakukan migration destruktif tanpa backup dan persetujuan eksplisit.
+1. Unduh atau salin repository proyek ke perangkat.
+2. Masuk ke direktori backend.
+3. Instal seluruh dependensi yang dibutuhkan.
+4. Siapkan database PostgreSQL.
+5. Buat file konfigurasi `.env` berdasarkan `.env.example`.
+6. Sesuaikan konfigurasi koneksi database melalui variabel `DATABASE_URL`.
+7. Atur `JWT_ACCESS_SECRET` menggunakan nilai acak minimal 32 karakter. Jangan menggunakan nilai contoh untuk lingkungan production.
+8. Jalankan perintah Prisma yang sesuai dengan skema dan status migration proyek untuk menyiapkan struktur database.
 
-Backend runtime memerlukan `DATABASE_URL` dan `JWT_ACCESS_SECRET`. Buat nilai `JWT_ACCESS_SECRET` acak minimal 32 karakter untuk setiap environment dan jangan menggunakan nilai contoh dari `.env.example`. Gunakan HTTPS langsung atau terminasi TLS pada reverse proxy tepercaya di production. Migration auth bersifat additive dan harus direview sebelum `prisma migrate deploy`.
+## Menjalankan Backend
 
-`package.json` overrides `deepmerge-ts` to `8.0.2` to address the Prisma config advisory while retaining Prisma 6.19.3. Revalidate Prisma CLI behavior and remove/revise this override when upgrading Prisma.
+Setelah instalasi dan konfigurasi selesai, backend dapat dijalankan menggunakan script yang tersedia pada `package.json`.
+
+Periksa script yang tersedia sebelum menjalankan aplikasi, misalnya untuk mode development atau production.
+
+## Konfigurasi Environment
+
+Backend memerlukan beberapa variabel lingkungan utama, antara lain:
+
+| Variabel | Keterangan |
+|---|---|
+| `DATABASE_URL` | URL koneksi ke database PostgreSQL |
+| `JWT_ACCESS_SECRET` | Secret untuk proses penandatanganan token akses |
+
+Nilai konfigurasi rahasia harus disimpan dalam file environment dan tidak boleh dimasukkan ke repository publik.
+
+## Struktur dan Pengembangan Sistem
+
+Pengembangan backend dilakukan secara modular agar setiap fungsi sistem dapat dikelola dan dikembangkan secara terpisah. Struktur database didefinisikan menggunakan Prisma Schema, sedangkan komunikasi antara aplikasi backend dan database dikelola melalui Prisma ORM.
+
+Pengembangan sistem juga memperhatikan autentikasi, pembatasan hak akses berdasarkan peran pengguna (Role-Based Access Control), serta pembatasan data berdasarkan outlet (Outlet Scoping).
+
+## Catatan Keamanan
+
+- Gunakan HTTPS pada lingkungan production.
+- Lindungi kredensial database dan secret autentikasi.
+- Lakukan pemeriksaan hak akses pada setiap endpoint yang memerlukan otorisasi.
+- Tinjau setiap perubahan database sebelum diterapkan.
+- Lakukan backup sebelum menjalankan perubahan database yang berpotensi mengubah atau menghapus data.
