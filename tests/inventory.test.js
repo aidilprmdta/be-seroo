@@ -415,3 +415,35 @@ test("Crew waste history is limited to own records; Manager sees outlet records"
   );
   assert.equal((await managerResponse.json()).data.waste.length, 1);
 });
+
+test("stocks/alerts detects items below minimum quantity or out of stock", async () => {
+  const fixture = createFixture("MANAGER");
+  // Tambah item ke-2 dengan stok 0 (CRITICAL)
+  fixture.state.items.push({ id: "item-2", name: "Gula", unit: "kg", isActive: true });
+  // Set item-1 dengan minimumQuantity = 1500 (stok sekarang 1000 => WARNING)
+  fixture.state.stocks[0].minimumQuantity = new Prisma.Decimal("1500");
+
+  const response = await request(
+    fixture.app,
+    fixture.accessToken,
+    "outlet-a/stocks/alerts",
+  );
+
+  assert.equal(response.status, 200);
+  const json = await response.json();
+  assert.equal(json.success, true);
+  assert.equal(json.data.outletId, "outlet-a");
+  assert.equal(json.data.alertCount, 2);
+  assert.equal(json.data.hasCriticalAlert, true);
+
+  const sugarAlert = json.data.alerts.find((a) => a.name === "Gula");
+  assert.ok(sugarAlert);
+  assert.equal(sugarAlert.severity, "CRITICAL");
+  assert.equal(sugarAlert.quantity, "0");
+
+  const milkAlert = json.data.alerts.find((a) => a.name === "Susu");
+  assert.ok(milkAlert);
+  assert.equal(milkAlert.severity, "WARNING");
+  assert.equal(milkAlert.quantity, "1000");
+  assert.equal(milkAlert.minimumQuantity, "1500");
+});

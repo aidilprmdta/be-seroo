@@ -12,12 +12,17 @@ test("health endpoint reports liveness without querying the database", async () 
   });
 
   const response = await app.request("/health");
+  const data = await response.json();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    success: true,
-    data: { status: "ok" },
-  });
+  assert.equal(data.success, true);
+  assert.equal(data.data.status, "ok");
+  assert.equal(typeof data.data.uptimeSeconds, "number");
+  assert.equal(typeof data.data.timestamp, "string");
+
+  // Healthz alias
+  const responseZ = await app.request("/healthz");
+  assert.equal(responseZ.status, 200);
 });
 
 test("request ID is echoed and honors a valid client correlation ID", async () => {
@@ -61,13 +66,20 @@ test("readiness endpoint checks database connectivity", async () => {
   });
 
   const response = await app.request("/health/ready");
+  const data = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(queryCount, 1);
-  assert.deepEqual(await response.json(), {
-    success: true,
-    data: { status: "ready" },
-  });
+  assert.equal(data.success, true);
+  assert.equal(data.data.status, "ready");
+  assert.equal(data.data.db, "connected");
+  assert.equal(typeof data.data.dbLatencyMs, "number");
+  assert.equal(typeof data.data.timestamp, "string");
+
+  // Readyz alias
+  const responseZ = await app.request("/readyz");
+  assert.equal(responseZ.status, 200);
+  assert.equal(queryCount, 2);
 });
 
 test("readiness failure returns a safe 503 and logs no database error message", async () => {

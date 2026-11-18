@@ -525,79 +525,8 @@ async function createOrder({
         });
       }
 
-      // Auto stock deduction based on recipes
-      const recipeItems = tx.recipeItem
-        ? await tx.recipeItem.findMany({
-            where: { productVariantId: { in: variantIds } },
-            include: {
-              inventoryItem: { select: { id: true, name: true, unit: true, isActive: true } },
-              productVariant: {
-                select: { id: true, name: true, product: { select: { id: true, name: true } } },
-              },
-            },
-          })
-        : [];
-
-      if (recipeItems.length > 0) {
-        const deductionsMap = new Map();
-        for (const orderItem of payload.items) {
-          const variantRecipes = recipeItems.filter(
-            (r) => r.productVariantId === orderItem.productVariantId,
-          );
-          for (const recipe of variantRecipes) {
-            const recipeQty = new Prisma.Decimal(recipe.quantity.toString());
-            const deductQty = recipeQty.mul(orderItem.quantity);
-            const existing = deductionsMap.get(recipe.inventoryItemId) || {
-              inventoryItemId: recipe.inventoryItemId,
-              itemName: recipe.inventoryItem.name,
-              unit: recipe.inventoryItem.unit,
-              totalQuantity: new Prisma.Decimal(0),
-            };
-            existing.totalQuantity = existing.totalQuantity.add(deductQty);
-            deductionsMap.set(recipe.inventoryItemId, existing);
-          }
-        }
-
-        for (const deduct of deductionsMap.values()) {
-          // Update / Upsert outlet stock
-          if (tx.outletStock?.upsert) {
-            await tx.outletStock.upsert({
-              where: {
-                outletId_inventoryItemId: {
-                  outletId,
-                  inventoryItemId: deduct.inventoryItemId,
-                },
-              },
-              create: {
-                outletId,
-                inventoryItemId: deduct.inventoryItemId,
-                quantity: deduct.totalQuantity.negated(),
-              },
-              update: {
-                quantity: { decrement: deduct.totalQuantity },
-              },
-            });
-          }
-
-          // Ledger stock movement
-          if (tx.stockMovement?.create) {
-            await tx.stockMovement.create({
-              data: {
-                outletId,
-                inventoryItemId: deduct.inventoryItemId,
-                createdById: crewId,
-                clientTransactionId: `${payload.clientTransactionId}:deduct:${deduct.inventoryItemId}`,
-                type: "OUT",
-                quantity: deduct.totalQuantity.negated(),
-                note: `Pemakaian bahan otomatis (Auto deduction) pesanan #${order.orderNumber}`,
-                referenceCode: order.orderNumber,
-                createdAt,
-              },
-            });
-          }
-        }
-      }
-
+            // Tidak ada pengurangan stok otomatis karena MVP
+      // tidak menggunakan sistem resep.
       return order;
     });
 
@@ -606,13 +535,16 @@ async function createOrder({
     if (error?.code !== "P2002") {
       throw error;
     }
+
     const racedOrder = await prisma.order.findUnique({
       where: uniqueWhere,
       include: ORDER_INCLUDE,
     });
+
     if (!racedOrder) {
       throw error;
     }
+
     return {
       order: existingOrderResult(racedOrder, payloadDigest),
       replayed: true,
@@ -1066,62 +998,7 @@ export function createPosRoutes({
             });
           }
         }
-      } else {
-        // Minuman belum dibuat -> Kembalikan stok bahan resep jika auto deduction pernah memotong
-        if (tx.recipe?.findMany && tx.outletStock) {
-          const variantIds = (order.items || [])
-            .map((it) => it.productVariantId)
-            .filter(Boolean);
-          if (variantIds.length > 0) {
-            const recipes = await tx.recipe.findMany({
-              where: { productVariantId: { in: variantIds } },
-              include: { inventoryItem: true },
-            });
-            const itemQtyMap = new Map();
-            for (const it of order.items || []) {
-              itemQtyMap.set(
-                it.productVariantId,
-                (itemQtyMap.get(it.productVariantId) || 0) + it.quantity,
-              );
-            }
-            for (const r of recipes) {
-              const orderedQty = itemQtyMap.get(r.productVariantId) || 0;
-              if (orderedQty > 0) {
-                const returnQty = new Prisma.Decimal(r.quantity.toString()).mul(orderedQty);
-                if (tx.outletStock.update) {
-                  await tx.outletStock.update({
-                    where: {
-                      outletId_inventoryItemId: {
-                        outletId,
-                        inventoryItemId: r.inventoryItemId,
-                      },
-                    },
-                    data: {
-                      quantity: { increment: returnQty },
-                    },
-                  });
-                }
-                if (tx.stockMovement?.create) {
-                  await tx.stockMovement.create({
-                    data: {
-                      outletId,
-                      inventoryItemId: r.inventoryItemId,
-                      createdById: auth.userId,
-                      clientTransactionId: `return:${order.id}:${r.inventoryItemId}`,
-                      type: "IN",
-                      quantity: returnQty,
-                      note: `Pengembalian stok pesanan dibatalkan #${order.orderNumber} (belum dibuat)`,
-                      referenceCode: order.orderNumber,
-                      createdAt: cancelTime,
-                    },
-                  });
-                }
-              }
-            }
-          }
-        }
       }
-
       return cancelled;
     });
 

@@ -1,0 +1,55 @@
+ALTER TABLE "ProductVariant"
+  VALIDATE CONSTRAINT "ProductVariant_price_nonnegative_check";
+
+ALTER TABLE "AddOn"
+  VALIDATE CONSTRAINT "AddOn_price_nonnegative_check";
+
+ALTER TABLE "Order"
+  VALIDATE CONSTRAINT "Order_amounts_nonnegative_check",
+  VALIDATE CONSTRAINT "Order_cancellation_state_check",
+  VALIDATE CONSTRAINT "Order_idempotency_pair_check";
+
+ALTER TABLE "OrderItem"
+  VALIDATE CONSTRAINT "OrderItem_amounts_nonnegative_check",
+  VALIDATE CONSTRAINT "OrderItem_quantity_positive_check";
+
+ALTER TABLE "OrderItemAddOn"
+  VALIDATE CONSTRAINT "OrderItemAddOn_quantity_positive_check",
+  VALIDATE CONSTRAINT "OrderItemAddOn_unitPrice_nonnegative_check";
+
+ALTER TABLE "Expense"
+  VALIDATE CONSTRAINT "Expense_amount_positive_check",
+  VALIDATE CONSTRAINT "Expense_cancellation_state_check",
+  VALIDATE CONSTRAINT "Expense_idempotency_pair_check";
+
+ALTER TABLE "StockMovement"
+  VALIDATE CONSTRAINT "StockMovement_quantity_nonzero_check";
+
+ALTER TABLE "StockRequestItem"
+  VALIDATE CONSTRAINT "StockRequestItem_quantities_check";
+
+ALTER TABLE "WasteRecord"
+  VALIDATE CONSTRAINT "WasteRecord_quantity_positive_check";
+
+ALTER TABLE "OutletStockRequestItem"
+  VALIDATE CONSTRAINT "OutletStockRequestItem_quantity_positive_check";
+
+ALTER TABLE "ClosingRecord"
+  VALIDATE CONSTRAINT "ClosingRecord_cash_values_nonnegative_check",
+  VALIDATE CONSTRAINT "ClosingRecord_idempotency_pair_check",
+  VALIDATE CONSTRAINT "ClosingRecord_reopen_state_check",
+  VALIDATE CONSTRAINT "ClosingRecord_unfinishedCount_nonnegative_check",
+  VALIDATE CONSTRAINT "ClosingRecord_version_positive_check";
+
+ALTER TABLE "ClosingHistory"
+  VALIDATE CONSTRAINT "ClosingHistory_unfinishedCount_nonnegative_check",
+  VALIDATE CONSTRAINT "ClosingHistory_version_positive_check";
+
+ALTER TABLE "ClosingAudit"
+  VALIDATE CONSTRAINT "ClosingAudit_version_positive_check";
+
+ALTER TABLE "OrderPayment"
+  VALIDATE CONSTRAINT "OrderPayment_amount_positive_check";
+
+ALTER TABLE "CashOpening"
+  VALIDATE CONSTRAINT "CashOpening_openingCash_nonnegative_check";

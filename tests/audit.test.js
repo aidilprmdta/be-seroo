@@ -71,7 +71,11 @@ function createDatabase() {
 
 test("audit log hanya dapat dibaca Admin Pusat dan metadata tidak membocorkan secret", async () => {
   const { prisma } = createDatabase();
-  const app = createApp({ prisma, authConfig: { accessTokenSecret: SECRET } });
+  const app = createApp({
+  prisma,
+  authConfig: { accessTokenSecret: SECRET },
+  auditOptions: { now: () => NOW },
+});
 
   const adminResponse = await app.request("/api/v1/admin/audit-logs?page=1&pageSize=10", {
     headers: { Authorization: `Bearer ${tokenFor("admin")}` },
@@ -100,7 +104,11 @@ test("audit log hanya dapat dibaca Admin Pusat dan metadata tidak membocorkan se
 
 test("audit log memvalidasi filter query", async () => {
   const { prisma } = createDatabase();
-  const app = createApp({ prisma, authConfig: { accessTokenSecret: SECRET } });
+  const app = createApp({
+  prisma,
+  authConfig: { accessTokenSecret: SECRET },
+  auditOptions: { now: () => NOW },
+});
   const response = await app.request("/api/v1/admin/audit-logs?page=0", {
     headers: { Authorization: `Bearer ${tokenFor("admin")}` },
   });

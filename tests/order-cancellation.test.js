@@ -311,7 +311,7 @@ test("PEMBATALAN PESANAN: Berhasil membatalkan pesanan dengan pencatatan waste (
   assert.ok(state.wasteRecords[0].description.includes("SR-0010"));
 });
 
-test("PEMBATALAN PESANAN: Pembatalan tanpa waste (minuman belum sempat dibuat) mengembalikan stok resep", async () => {
+test("PEMBATALAN PESANAN: Pembatalan tanpa waste tidak mengubah stok otomatis", async () => {
   const { app, state } = buildApp("CREW");
   const token = createTestToken();
 
@@ -319,18 +319,11 @@ test("PEMBATALAN PESANAN: Pembatalan tanpa waste (minuman belum sempat dibuat) m
   const variantId = "var-teh-tarik";
   const itemId = "inv-daun-teh";
 
-  // Setup stock & recipe
+  // Stok awal dicatat, tetapi MVP tidak mengurangi stok berdasarkan resep saat POS.
   state.stocks.push({
     outletId: "outlet-rumbai",
     inventoryItemId: itemId,
     quantity: new Prisma.Decimal("100.000"),
-  });
-
-  state.recipes.push({
-    productVariantId: variantId,
-    inventoryItemId: itemId,
-    quantity: new Prisma.Decimal("15.000"),
-    inventoryItem: { id: itemId, name: "Daun Teh", unit: "gram" },
   });
 
   state.orders.push({
@@ -366,7 +359,7 @@ test("PEMBATALAN PESANAN: Pembatalan tanpa waste (minuman belum sempat dibuat) m
     paymentStatus: "LUNAS",
   });
 
-  // Cancel with recordWaste = false (drink not made yet)
+  // Pembatalan tanpa pencatatan waste.
   const res = await app.request(`/api/v1/outlets/outlet-rumbai/orders/${orderId}/cancel`, {
     method: "POST",
     headers: {
@@ -384,16 +377,11 @@ test("PEMBATALAN PESANAN: Pembatalan tanpa waste (minuman belum sempat dibuat) m
   assert.equal(body.data.order.status, "CANCELLED");
   assert.equal(body.data.order.isWasteRecorded, false);
 
-  // Stock should be refunded: 15g * 2 = 30g returned -> 100 + 30 = 130
-  assert.equal(state.stocks[0].quantity.toString(), "130");
+  // Tidak ada pengembalian stok resep atau StockMovement otomatis.
+  assert.equal(state.stocks[0].quantity.toString(), "100");
+  assert.equal(state.movements.length, 0);
 
-  // StockMovement IN logged
-  assert.equal(state.movements.length, 1);
-  assert.equal(state.movements[0].type, "IN");
-  assert.equal(state.movements[0].quantity.toString(), "30");
-  assert.ok(state.movements[0].note.includes("Pengembalian stok"));
-
-  // No waste record created
+  // Tidak ada waste record karena recordWaste = false.
   assert.equal(state.wasteRecords.length, 0);
 });
 

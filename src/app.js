@@ -19,8 +19,7 @@ import { CatalogAdminError } from "./catalog/errors.js";
 import { createCatalogAdminRoutes } from "./catalog/routes.js";
 import { OutletAccessError } from "./outlets/accessErrors.js";
 import { createOutletAccessRoutes } from "./outlets/accessRoutes.js";
-import { RecipeError } from "./recipes/errors.js";
-import { createRecipeRoutes } from "./recipes/routes.js";
+import { createOutletAdminRoutes, OutletAdminError } from "./outlets/adminRoutes.js";
 import { AdminAccountError } from "./accounts/errors.js";
 import { createAdminAccountRoutes } from "./accounts/adminRoutes.js";
 import { AuditError } from "./audit/errors.js";
@@ -39,7 +38,6 @@ export function createApp({
   dashboardOptions = {},
   catalogOptions = {},
   outletAccessOptions = {},
-  recipeOptions = {},
   adminAccountOptions = {},
   auditOptions = {},
   corsOrigins = [],
@@ -73,20 +71,33 @@ export function createApp({
     }));
   }
 
-  app.get("/health", (c) =>
+  const healthHandler = (c) =>
     c.json({
       success: true,
-      data: { status: "ok" },
-    }),
-  );
+      data: {
+        status: "ok",
+        uptimeSeconds: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+      },
+    });
 
-  app.get("/health/ready", async (c) => {
+  app.get("/health", healthHandler);
+  app.get("/healthz", healthHandler);
+
+  const readyHandler = async (c) => {
     try {
+      const start = Date.now();
       await prisma.$queryRaw`SELECT 1`;
+      const dbLatencyMs = Date.now() - start;
 
       return c.json({
         success: true,
-        data: { status: "ready" },
+        data: {
+          status: "ready",
+          db: "connected",
+          dbLatencyMs,
+          timestamp: new Date().toISOString(),
+        },
       });
     } catch (error) {
       logger.error(
@@ -105,7 +116,10 @@ export function createApp({
         503,
       );
     }
-  });
+  };
+
+  app.get("/health/ready", readyHandler);
+  app.get("/readyz", readyHandler);
 
   if (authConfig) {
     app.route(
@@ -177,6 +191,13 @@ export function createApp({
       }),
     );
     app.route(
+      "/api/v1/admin",
+      createOutletAdminRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+      }),
+    );
+    app.route(
       "/api/v1/outlets",
       createOutletAccessRoutes({
         prisma,
@@ -192,15 +213,7 @@ export function createApp({
         ...auditOptions,
       }),
     );
-    app.route(
-      "/api/v1/recipes",
-      createRecipeRoutes({
-        prisma,
-        accessTokenSecret: authConfig.accessTokenSecret,
-        ...recipeOptions,
-      }),
-    );
-  }
+  } // Tutup if (authConfig)
 
   app.notFound((c) =>
     c.json(
@@ -226,7 +239,7 @@ export function createApp({
       error instanceof DashboardError ||
       error instanceof CatalogAdminError ||
       error instanceof OutletAccessError ||
-      error instanceof RecipeError ||
+      error instanceof OutletAdminError ||
       error instanceof AdminAccountError ||
       error instanceof AuditError
     ) {

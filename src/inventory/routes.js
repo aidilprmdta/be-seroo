@@ -643,7 +643,12 @@ export function createInventoryRoutes({
       }),
       prisma.outletStock.findMany({
         where: { outletId, inventoryItem: { isActive: true } },
-        select: { inventoryItemId: true, quantity: true, updatedAt: true },
+        select: {
+          inventoryItemId: true,
+          quantity: true,
+          minimumQuantity: true,
+          updatedAt: true,
+        },
       }),
     ]);
     const balanceByItem = new Map(
@@ -655,14 +660,93 @@ export function createInventoryRoutes({
         outletId,
         stocks: items.map((item) => {
           const balance = balanceByItem.get(item.id);
+          const quantity = balance?.quantity.toString() ?? "0";
+          const minimumQuantity = balance?.minimumQuantity?.toString() ?? "0";
+          const isLowStock = new Prisma.Decimal(quantity).lte(
+            new Prisma.Decimal(minimumQuantity),
+          ) && new Prisma.Decimal(minimumQuantity).gt(0);
+
           return {
             inventoryItemId: item.id,
             name: item.name,
             unit: item.unit,
-            quantity: balance?.quantity.toString() ?? "0",
+            quantity,
+            minimumQuantity,
+            isLowStock,
             updatedAt: balance?.updatedAt.toISOString() ?? null,
           };
         }),
+      },
+    });
+  });
+
+  routes.get("/:outletId/stocks/alerts", authenticate, async (c) => {
+    const outletId = c.req.param("outletId");
+    assertOutletId(outletId);
+    const auth = c.get("auth");
+    await requireMembership(prisma, auth.userId, outletId, [
+      "CREW",
+      "MANAGER",
+      "OWNER",
+      "OWNER_MITRA",
+      "ADMIN_PUSAT",
+    ]);
+
+    const [items, balances] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, unit: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.outletStock.findMany({
+        where: { outletId, inventoryItem: { isActive: true } },
+        select: {
+          inventoryItemId: true,
+          quantity: true,
+          minimumQuantity: true,
+          updatedAt: true,
+        },
+      }),
+    ]);
+
+    const balanceByItem = new Map(
+      balances.map((balance) => [balance.inventoryItemId, balance]),
+    );
+
+    const alerts = [];
+    for (const item of items) {
+      const balance = balanceByItem.get(item.id);
+      const quantity = balance?.quantity ?? new Prisma.Decimal(0);
+      const minimumQuantity = balance?.minimumQuantity ?? new Prisma.Decimal(0);
+
+      // Low stock jika minimumQuantity > 0 dan quantity <= minimumQuantity,
+      // atau jika quantity <= 0 (stok habis)
+      const isOutOfStock = quantity.lte(0);
+      const isUnderMinimum = minimumQuantity.gt(0) && quantity.lte(minimumQuantity);
+
+      if (isOutOfStock || isUnderMinimum) {
+        alerts.push({
+          inventoryItemId: item.id,
+          name: item.name,
+          unit: item.unit,
+          quantity: quantity.toString(),
+          minimumQuantity: minimumQuantity.toString(),
+          severity: isOutOfStock ? "CRITICAL" : "WARNING",
+          message: isOutOfStock
+            ? `Stok ${item.name} habis (0 ${item.unit}). Segera lakukan permintaan stok.`
+            : `Stok ${item.name} menipis (${quantity.toString()} ${item.unit} <= batas min. ${minimumQuantity.toString()} ${item.unit}).`,
+          updatedAt: balance?.updatedAt?.toISOString() ?? null,
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        outletId,
+        alertCount: alerts.length,
+        hasCriticalAlert: alerts.some((a) => a.severity === "CRITICAL"),
+        alerts,
       },
     });
   });
