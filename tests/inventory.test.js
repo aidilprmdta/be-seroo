@@ -414,6 +414,34 @@ test("Crew waste history is limited to own records; Manager sees outlet records"
     "outlet-a/waste",
   );
   assert.equal((await managerResponse.json()).data.waste.length, 1);
+
+  // OWNER_MITRA can read waste history for authorized outlet
+  const ownerMitra = createFixture("OWNER_MITRA");
+  ownerMitra.state.waste.push({
+    outletId: "outlet-a",
+    createdById: "crew-1",
+    wasteDate: NOW,
+    createdAt: NOW,
+    quantity: new Prisma.Decimal("5"),
+    createdBy: { id: "crew-1", name: "Crew Rumbai" },
+  });
+  const ownerResponse = await request(
+    ownerMitra.app,
+    ownerMitra.accessToken,
+    "outlet-a/waste",
+  );
+  assert.equal(ownerResponse.status, 200);
+  assert.equal((await ownerResponse.json()).data.waste.length, 1);
+
+  // OWNER_MITRA cannot create waste records (Forbidden 403)
+  const ownerCreateResponse = await request(
+    ownerMitra.app,
+    ownerMitra.accessToken,
+    "outlet-a/waste",
+    "POST",
+    wastePayload(),
+  );
+  assert.equal(ownerCreateResponse.status, 403);
 });
 
 test("stocks/alerts detects items below minimum quantity or out of stock", async () => {

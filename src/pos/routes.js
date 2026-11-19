@@ -352,6 +352,30 @@ async function createOrder({
         );
       }
 
+      // Validasi ketersediaan menu per outlet (OutletProductAvailability)
+      if (tx.outletProductAvailability?.findMany) {
+        const productIds = [...new Set(variantsResult.map((v) => v.product.id))];
+        const availabilities = await tx.outletProductAvailability.findMany({
+          where: {
+            outletId,
+            productId: { in: productIds },
+            isAvailable: true,
+          },
+          select: { productId: true },
+        });
+        const availableProductIds = new Set(availabilities.map((a) => a.productId));
+        const unavailableVariant = variantsResult.find(
+          (v) => !availableProductIds.has(v.product.id),
+        );
+        if (unavailableVariant) {
+          throw new PosError(
+            "CATALOG_ITEM_UNAVAILABLE",
+            409,
+            `Produk "${unavailableVariant.product.name}" tidak tersedia di outlet ini. Muat ulang katalog.`,
+          );
+        }
+      }
+
       const addOnIds = [
         ...new Set(payload.items.flatMap((item) => item.addOns.map((addOn) => addOn.addOnId))),
       ];
@@ -571,12 +595,23 @@ export function createPosRoutes({
     const auth = c.get("auth");
     await requireCrewMembership(prisma, auth.userId, outletId);
 
+    const productWhere = {
+      isActive: true,
+      variants: { some: { isActive: true } },
+    };
+
+    if (prisma.outletProductAvailability?.findMany) {
+      productWhere.outletAvailabilities = {
+        some: {
+          outletId,
+          isAvailable: true,
+        },
+      };
+    }
+
     const [products, addOns] = await Promise.all([
       prisma.product.findMany({
-        where: {
-          isActive: true,
-          variants: { some: { isActive: true } },
-        },
+        where: productWhere,
         select: {
           id: true,
           name: true,

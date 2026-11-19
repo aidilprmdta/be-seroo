@@ -958,6 +958,9 @@ export function createInventoryRoutes({
     const role = await requireMembership(prisma, auth.userId, outletId, [
       "CREW",
       "MANAGER",
+      "OWNER",
+      "OWNER_MITRA",
+      "ADMIN_PUSAT",
     ]);
     const records = await prisma.wasteRecord.findMany({
       where: {

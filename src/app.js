@@ -24,6 +24,10 @@ import { AdminAccountError } from "./accounts/errors.js";
 import { createAdminAccountRoutes } from "./accounts/adminRoutes.js";
 import { AuditError } from "./audit/errors.js";
 import { createAuditRoutes } from "./audit/routes.js";
+import { OutletAvailabilityError } from "./catalog/availabilityErrors.js";
+import { createCatalogAvailabilityRoutes } from "./catalog/availabilityRoutes.js";
+import { LossReportError } from "./loss-reports/errors.js";
+import { createLossReportRoutes } from "./loss-reports/routes.js";
 
 export function createApp({
   prisma,
@@ -40,6 +44,8 @@ export function createApp({
   outletAccessOptions = {},
   adminAccountOptions = {},
   auditOptions = {},
+  catalogAvailabilityOptions = {},
+  lossReportOptions = {},
   corsOrigins = [],
 }) {
   const app = new Hono();
@@ -213,6 +219,22 @@ export function createApp({
         ...auditOptions,
       }),
     );
+    app.route(
+      "/api/v1/outlets",
+      createCatalogAvailabilityRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+        ...catalogAvailabilityOptions,
+      }),
+    );
+    app.route(
+      "/api/v1/outlets",
+      createLossReportRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+        ...lossReportOptions,
+      }),
+    );
   } // Tutup if (authConfig)
 
   app.notFound((c) =>
@@ -241,7 +263,9 @@ export function createApp({
       error instanceof OutletAccessError ||
       error instanceof OutletAdminError ||
       error instanceof AdminAccountError ||
-      error instanceof AuditError
+      error instanceof AuditError ||
+      error instanceof OutletAvailabilityError ||
+      error instanceof LossReportError
     ) {
       return c.json(
         {
