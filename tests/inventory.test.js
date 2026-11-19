@@ -414,4 +414,64 @@ test("Crew waste history is limited to own records; Manager sees outlet records"
     "outlet-a/waste",
   );
   assert.equal((await managerResponse.json()).data.waste.length, 1);
+
+  // OWNER_MITRA can read waste history for authorized outlet
+  const ownerMitra = createFixture("OWNER_MITRA");
+  ownerMitra.state.waste.push({
+    outletId: "outlet-a",
+    createdById: "crew-1",
+    wasteDate: NOW,
+    createdAt: NOW,
+    quantity: new Prisma.Decimal("5"),
+    createdBy: { id: "crew-1", name: "Crew Rumbai" },
+  });
+  const ownerResponse = await request(
+    ownerMitra.app,
+    ownerMitra.accessToken,
+    "outlet-a/waste",
+  );
+  assert.equal(ownerResponse.status, 200);
+  assert.equal((await ownerResponse.json()).data.waste.length, 1);
+
+  // OWNER_MITRA cannot create waste records (Forbidden 403)
+  const ownerCreateResponse = await request(
+    ownerMitra.app,
+    ownerMitra.accessToken,
+    "outlet-a/waste",
+    "POST",
+    wastePayload(),
+  );
+  assert.equal(ownerCreateResponse.status, 403);
+});
+
+test("stocks/alerts detects items below minimum quantity or out of stock", async () => {
+  const fixture = createFixture("MANAGER");
+  // Tambah item ke-2 dengan stok 0 (CRITICAL)
+  fixture.state.items.push({ id: "item-2", name: "Gula", unit: "kg", isActive: true });
+  // Set item-1 dengan minimumQuantity = 1500 (stok sekarang 1000 => WARNING)
+  fixture.state.stocks[0].minimumQuantity = new Prisma.Decimal("1500");
+
+  const response = await request(
+    fixture.app,
+    fixture.accessToken,
+    "outlet-a/stocks/alerts",
+  );
+
+  assert.equal(response.status, 200);
+  const json = await response.json();
+  assert.equal(json.success, true);
+  assert.equal(json.data.outletId, "outlet-a");
+  assert.equal(json.data.alertCount, 2);
+  assert.equal(json.data.hasCriticalAlert, true);
+
+  const sugarAlert = json.data.alerts.find((a) => a.name === "Gula");
+  assert.ok(sugarAlert);
+  assert.equal(sugarAlert.severity, "CRITICAL");
+  assert.equal(sugarAlert.quantity, "0");
+
+  const milkAlert = json.data.alerts.find((a) => a.name === "Susu");
+  assert.ok(milkAlert);
+  assert.equal(milkAlert.severity, "WARNING");
+  assert.equal(milkAlert.quantity, "1000");
+  assert.equal(milkAlert.minimumQuantity, "1500");
 });

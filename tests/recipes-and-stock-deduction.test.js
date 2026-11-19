@@ -365,158 +365,59 @@ function createDatabase() {
 }
 
 // -------------------------------------------------------------------------
-// 1. RECIPE MANAGEMENT: Admin Pusat Mengatur Resep Minuman
+// MVP SCOPE: Resep tidak dikelola aplikasi dan POS tidak mengurangi stok otomatis.
 // -------------------------------------------------------------------------
-test("RECIPE MANAGEMENT: Admin Pusat mengatur resep minuman lengkap (produk, ukuran, bahan, takaran, satuan)", async () => {
-  const { prisma, state } = createDatabase();
-  const adminToken = createToken("user-admin");
 
-  const app = createApp({
-    prisma,
-    authConfig: { accessTokenSecret: ACCESS_TOKEN_SECRET },
-    recipeOptions: { now: () => NOW },
-  });
-
-  // Admin Pusat mengatur resep Teh Tarik Medium:
-  // - Bubuk Teh: 15 gr
-  // - Susu Evaporasi: 50 ml
-  // - Gula Pasir: 20 gr
-  const setRes = await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      items: [
-        { inventoryItemId: "item-tea", quantity: "15.000" },
-        { inventoryItemId: "item-milk", quantity: "50.000" },
-        { inventoryItemId: "item-sugar", quantity: "20.000" },
-      ],
-    }),
-  });
-
-  assert.equal(setRes.status, 200);
-  const setBody = await setRes.json();
-  const recipe = setBody.data;
-
-  assert.equal(recipe.productName, "Teh Tarik");
-  assert.equal(recipe.variantName, "Medium");
-  assert.equal(recipe.items.length, 3);
-
-  // Verifikasi kelengkapan data: Produk, Ukuran, Bahan baku, Jumlah pemakaian, Satuan bahan
-  const teaItem = recipe.items.find((i) => i.inventoryItemId === "item-tea");
-  assert.equal(teaItem.ingredientName, "Bubuk Teh");
-  assert.equal(teaItem.quantity, "15.000");
-  assert.equal(teaItem.unit, "gram");
-
-  const milkItem = recipe.items.find((i) => i.inventoryItemId === "item-milk");
-  assert.equal(milkItem.ingredientName, "Susu Evaporasi");
-  assert.equal(milkItem.quantity, "50.000");
-  assert.equal(milkItem.unit, "ml");
-
-  const sugarItem = recipe.items.find((i) => i.inventoryItemId === "item-sugar");
-  assert.equal(sugarItem.ingredientName, "Gula Pasir");
-  assert.equal(sugarItem.quantity, "20.000");
-  assert.equal(sugarItem.unit, "gram");
-
-  assert.equal(state.recipes.length, 3);
-});
-
-// -------------------------------------------------------------------------
-// 2. RECIPE AUTHORIZATION: Crew dan Manager hanya dapat melihat resep, tidak dapat mengubah
-// -------------------------------------------------------------------------
-test("RECIPE AUTHORIZATION: Crew/Manager/Owner Mitra ditolak saat mengubah resep, tapi dapat melihat resep", async () => {
+test("MVP: endpoint resep tidak disediakan untuk seluruh role", async () => {
   const { prisma } = createDatabase();
-  const adminToken = createToken("user-admin");
-  const crewToken = createToken("user-crew");
-  const managerToken = createToken("user-manager");
-  const mitraToken = createToken("user-mitra");
-
   const app = createApp({
     prisma,
     authConfig: { accessTokenSecret: ACCESS_TOKEN_SECRET },
-    recipeOptions: { now: () => NOW },
-  });
-
-  // Admin buat resep
-  await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      items: [{ inventoryItemId: "item-tea", quantity: "15.000" }],
-    }),
-  });
-
-  // Crew mencoba mengubah -> 403
-  const crewUpdate = await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${crewToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ items: [] }),
-  });
-  assert.equal(crewUpdate.status, 403);
-
-  // Manager mencoba mengubah -> 403
-  const managerUpdate = await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${managerToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ items: [] }),
-  });
-  assert.equal(managerUpdate.status, 403);
-
-  // Owner Mitra mencoba mengubah -> 403
-  const mitraUpdate = await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${mitraToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ items: [] }),
-  });
-  assert.equal(mitraUpdate.status, 403);
-
-  // Crew dapat membaca resep untuk keperluan operasional/pembuatan minuman
-  const crewRead = await app.request("/api/v1/recipes/variants/var-tea-med", {
-    headers: { Authorization: `Bearer ${crewToken}` },
-  });
-  assert.equal(crewRead.status, 200);
-  const readBody = await crewRead.json();
-  assert.equal(readBody.data.items.length, 1);
-});
-
-// -------------------------------------------------------------------------
-// 3. AUTO STOCK DEDUCTION: Pesanan POS otomatis mengurangi stok sesuai resep
-// -------------------------------------------------------------------------
-test("AUTO STOCK DEDUCTION: Transaksi POS otomatis memotong stok bahan baku dan mencatat ledger StockMovement", async () => {
-  const { prisma, state } = createDatabase();
-  const adminToken = createToken("user-admin");
-  const crewToken = createToken("user-crew");
-
-  const app = createApp({
-    prisma,
-    authConfig: { accessTokenSecret: ACCESS_TOKEN_SECRET },
-    recipeOptions: { now: () => NOW },
     posOptions: { now: () => NOW },
   });
 
-  // 1. Admin atur resep Teh Tarik Medium: Teh 15gr, Susu 50ml, Gula 20gr
-  await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      items: [
-        { inventoryItemId: "item-tea", quantity: "15.000" },
-        { inventoryItemId: "item-milk", quantity: "50.000" },
-        { inventoryItemId: "item-sugar", quantity: "20.000" },
-      ],
-    }),
+  for (const userId of ["user-admin", "user-crew", "user-manager", "user-mitra"]) {
+    const token = createToken(userId);
+
+    const readRes = await app.request("/api/v1/recipes/variants/var-tea-med", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(readRes.status, 404, `GET resep seharusnya 404 untuk ${userId}`);
+
+    const updateRes = await app.request("/api/v1/recipes/variants/var-tea-med", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        items: [{ inventoryItemId: "item-tea", quantity: "15.000" }],
+      }),
+    });
+    assert.equal(updateRes.status, 404, `PUT resep seharusnya 404 untuk ${userId}`);
+  }
+});
+
+test("MVP: transaksi POS berhasil tanpa mengurangi stok bahan atau membuat StockMovement otomatis", async () => {
+  const { prisma, state } = createDatabase();
+  const crewToken = createToken("user-crew");
+  const app = createApp({
+    prisma,
+    authConfig: { accessTokenSecret: ACCESS_TOKEN_SECRET },
+    posOptions: { now: () => NOW },
   });
 
-  // Stok awal Outlet Rumbai:
-  // - Teh: 1000 gr
-  // - Susu: 2000 ml
-  // - Gula: 1500 gr
-  const teaBefore = state.stocks.find((s) => s.inventoryItemId === "item-tea").quantity;
-  assert.equal(teaBefore.toString(), "1000");
+  const stockBefore = state.stocks.map((stock) => ({
+    inventoryItemId: stock.inventoryItemId,
+    quantity: stock.quantity.toString(),
+  }));
 
-  // 2. Kasir (Crew) membuat transaksi POS: 2 porsi Teh Tarik Medium
   const orderRes = await app.request("/api/v1/outlets/outlet-rumbai/orders", {
     method: "POST",
-    headers: { Authorization: `Bearer ${crewToken}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${crewToken}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       clientTransactionId: "11111111-2222-4333-8444-555555555555",
       paymentMethod: "CASH",
@@ -528,82 +429,36 @@ test("AUTO STOCK DEDUCTION: Transaksi POS otomatis memotong stok bahan baku dan 
 
   assert.equal(orderRes.status, 201);
   const orderBody = await orderRes.json();
-  const order = orderBody.data.order;
-  assert.equal(order.total, "30000");
+  assert.equal(orderBody.data.order.total, "30000");
 
-  // 3. Verifikasi pengurangan stok outlet:
-  // - Teh: 1000 - (15 * 2) = 970 gr
-  // - Susu: 2000 - (50 * 2) = 1900 ml
-  // - Gula: 1500 - (20 * 2) = 1460 gr
-  const teaAfter = state.stocks.find((s) => s.inventoryItemId === "item-tea").quantity;
-  const milkAfter = state.stocks.find((s) => s.inventoryItemId === "item-milk").quantity;
-  const sugarAfter = state.stocks.find((s) => s.inventoryItemId === "item-sugar").quantity;
-
-  assert.equal(teaAfter.toString(), "970");
-  assert.equal(milkAfter.toString(), "1900");
-  assert.equal(sugarAfter.toString(), "1460");
-
-  // 4. Verifikasi riwayat pergerakan stok (StockMovement):
-  // Tercipta 3 baris StockMovement bertipe 'OUT' dengan referensi nomor order
-  const movements = state.movements.filter((m) => m.referenceCode === order.orderNumber);
-  assert.equal(movements.length, 3);
-
-  const teaMovement = movements.find((m) => m.inventoryItemId === "item-tea");
-  assert.equal(teaMovement.type, "OUT");
-  assert.equal(teaMovement.quantity.toString(), "-30");
-  assert.ok(teaMovement.note.includes("Auto deduction"));
-
-  const milkMovement = movements.find((m) => m.inventoryItemId === "item-milk");
-  assert.equal(milkMovement.type, "OUT");
-  assert.equal(milkMovement.quantity.toString(), "-100");
-
-  const sugarMovement = movements.find((m) => m.inventoryItemId === "item-sugar");
-  assert.equal(sugarMovement.type, "OUT");
-  assert.equal(sugarMovement.quantity.toString(), "-40");
+  const stockAfter = state.stocks.map((stock) => ({
+    inventoryItemId: stock.inventoryItemId,
+    quantity: stock.quantity.toString(),
+  }));
+  assert.deepEqual(stockAfter, stockBefore);
+  assert.equal(state.movements.length, 0);
 });
 
-// -------------------------------------------------------------------------
-// 4. MULTI ITEM DEDUCTION: Pesanan dengan beberapa produk menggabungkan pemakaian bahan yang sama
-// -------------------------------------------------------------------------
-test("AUTO STOCK DEDUCTION: Beberapa minuman yang memakai bahan sama diakumulasikan pemotongannya", async () => {
+test("MVP: pesanan dengan beberapa produk tetap tidak mengubah stok bahan", async () => {
   const { prisma, state } = createDatabase();
-  const adminToken = createToken("user-admin");
   const crewToken = createToken("user-crew");
-
   const app = createApp({
     prisma,
     authConfig: { accessTokenSecret: ACCESS_TOKEN_SECRET },
-    recipeOptions: { now: () => NOW },
     posOptions: { now: () => NOW },
   });
 
-  // Teh Tarik Medium: Susu 50ml
-  await app.request("/api/v1/recipes/variants/var-tea-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      items: [{ inventoryItemId: "item-milk", quantity: "50.000" }],
-    }),
-  });
+  const stockBefore = state.stocks.map((stock) => ({
+    inventoryItemId: stock.inventoryItemId,
+    quantity: stock.quantity.toString(),
+  }));
 
-  // Kopi Susu Medium: Susu 60ml, Kopi 20gr
-  await app.request("/api/v1/recipes/variants/var-coffee-med", {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      items: [
-        { inventoryItemId: "item-milk", quantity: "60.000" },
-        { inventoryItemId: "item-coffee", quantity: "20.000" },
-      ],
-    }),
-  });
-
-  // Pesan 1 Teh Tarik (Susu: 50) + 2 Kopi Susu (Susu: 60 * 2 = 120, Kopi: 20 * 2 = 40)
-  // Total Susu = 50 + 120 = 170 ml
-  // Total Kopi = 40 gr
   const orderRes = await app.request("/api/v1/outlets/outlet-rumbai/orders", {
     method: "POST",
-    headers: { Authorization: `Bearer ${crewToken}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${crewToken}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       clientTransactionId: "99999999-8888-4777-8666-555555555555",
       paymentMethod: "CASH",
@@ -613,13 +468,15 @@ test("AUTO STOCK DEDUCTION: Beberapa minuman yang memakai bahan sama diakumulasi
       ],
     }),
   });
+
   assert.equal(orderRes.status, 201);
+  const orderBody = await orderRes.json();
+  assert.equal(orderBody.data.order.total, "51000");
 
-  // Stok susu awal 2000 - 170 = 1830 ml
-  const milkAfter = state.stocks.find((s) => s.inventoryItemId === "item-milk").quantity;
-  assert.equal(milkAfter.toString(), "1830");
-
-  // Stok kopi awal 1000 - 40 = 960 gr
-  const coffeeAfter = state.stocks.find((s) => s.inventoryItemId === "item-coffee").quantity;
-  assert.equal(coffeeAfter.toString(), "960");
+  const stockAfter = state.stocks.map((stock) => ({
+    inventoryItemId: stock.inventoryItemId,
+    quantity: stock.quantity.toString(),
+  }));
+  assert.deepEqual(stockAfter, stockBefore);
+  assert.equal(state.movements.length, 0);
 });

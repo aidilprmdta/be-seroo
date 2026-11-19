@@ -5,6 +5,7 @@ import {
   listAdminCatalog,
   createProduct,
   updateProduct,
+  createVariant,
   updateVariant,
   createAddOn,
   updateAddOn,
@@ -74,6 +75,15 @@ export function createCatalogAdminRoutes({
     const body = await readJson(c);
     const product = await updateProduct(prisma, productId, body);
     return c.json({ success: true, data: { product } });
+  });
+
+  // Create variant for an existing product
+  routes.post("/variants", authenticate, async (c) => {
+    const caller = c.get("auth");
+    await requireAdminPusat(prisma, caller.userId);
+    const body = await readJson(c);
+    const variant = await createVariant(prisma, body);
+    return c.json({ success: true, data: { variant } }, 201);
   });
 
   // Update variant price / status

@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -45,6 +46,13 @@ enum StockMovementType {
   ADJUSTMENT
   TRANSFER_IN
   TRANSFER_OUT
+  LOSS
+}
+
+enum LossReportStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
 }
 
 enum StockRequestStatus {
@@ -100,29 +108,32 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  memberships                  OutletMembership[]
-  authSessions                 AuthSession[]
-  passwordAuditsAsActor        UserPasswordAudit[]  @relation("UserPasswordAuditActor")
-  passwordAuditsAsTarget       UserPasswordAudit[]  @relation("UserPasswordAuditTarget")
-  orders                       Order[]
-  verifiedOrders               Order[]              @relation("OrderVerifiedBy")
-  verifiedPayments             OrderPayment[]       @relation("OrderPaymentVerifiedBy")
-  expenses                     Expense[]
-  expenseAudits                ExpenseAudit[]       @relation("ExpenseAuditActor")
-  wasteRecords                 WasteRecord[]
-  stockMovements               StockMovement[]
-  requestedStockOrders         StockRequest[]       @relation("RequestedBy")
-  processedStockOrders         StockRequest[]       @relation("ProcessedBy")
-  requestedOutletStockRequests OutletStockRequest[] @relation("OutletStockRequestCreatedBy")
-  processedOutletStockRequests OutletStockRequest[] @relation("OutletStockRequestProcessedBy")
-  closingsClosed               ClosingRecord[]      @relation("ClosingClosedBy")
-  closingsReopened             ClosingRecord[]      @relation("ClosingReopenedBy")
-  closingHistories             ClosingHistory[]     @relation("ClosingHistoryClosedBy")
-  closingAudits                ClosingAudit[]       @relation("ClosingAuditActor")
-  cashOpenings                 CashOpening[]        @relation("CashOpeningOpenedBy")
-  cancelledOrders              Order[]              @relation("OrderCancelledBy")
-  orderStatusHistories         OrderStatusHistory[] @relation("OrderStatusHistoryActor")
-  auditLogs                    AuditLog[]           @relation("AuditLogActor")
+  memberships                        OutletMembership[]
+  authSessions                       AuthSession[]
+  passwordAuditsAsActor              UserPasswordAudit[]         @relation("UserPasswordAuditActor")
+  passwordAuditsAsTarget             UserPasswordAudit[]         @relation("UserPasswordAuditTarget")
+  orders                             Order[]
+  verifiedOrders                     Order[]                     @relation("OrderVerifiedBy")
+  verifiedPayments                   OrderPayment[]              @relation("OrderPaymentVerifiedBy")
+  expenses                           Expense[]
+  expenseAudits                      ExpenseAudit[]              @relation("ExpenseAuditActor")
+  wasteRecords                       WasteRecord[]
+  stockMovements                     StockMovement[]
+  requestedStockOrders               StockRequest[]              @relation("RequestedBy")
+  processedStockOrders               StockRequest[]              @relation("ProcessedBy")
+  requestedOutletStockRequests       OutletStockRequest[]        @relation("OutletStockRequestCreatedBy")
+  processedOutletStockRequests       OutletStockRequest[]        @relation("OutletStockRequestProcessedBy")
+  closingsClosed                     ClosingRecord[]             @relation("ClosingClosedBy")
+  closingsReopened                   ClosingRecord[]             @relation("ClosingReopenedBy")
+  closingHistories                   ClosingHistory[]            @relation("ClosingHistoryClosedBy")
+  closingAudits                      ClosingAudit[]              @relation("ClosingAuditActor")
+  cashOpenings                       CashOpening[]               @relation("CashOpeningOpenedBy")
+  cancelledOrders                    Order[]                     @relation("OrderCancelledBy")
+  orderStatusHistories               OrderStatusHistory[]        @relation("OrderStatusHistoryActor")
+  auditLogs                          AuditLog[]                  @relation("AuditLogActor")
+  outletProductAvailabilitiesUpdated OutletProductAvailability[] @relation("OutletProductAvailabilityUpdatedBy")
+  reportedLosses                     LossReport[]                @relation("LossReportReportedBy")
+  reviewedLosses                     LossReport[]                @relation("LossReportReviewedBy")
 }
 
 model UserPasswordAudit {
@@ -218,6 +229,9 @@ model Outlet {
   cashOpenings        CashOpening[]
   auditLogs           AuditLog[]
 
+  productAvailabilities OutletProductAvailability[]
+  lossReports           LossReport[]
+
   outgoingRequests StockRequest[] @relation("SourceOutlet")
   incomingRequests StockRequest[] @relation("DestinationOutlet")
 }
@@ -250,7 +264,8 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  variants ProductVariant[]
+  variants             ProductVariant[]
+  outletAvailabilities OutletProductAvailability[]
 }
 
 model ProductVariant {
@@ -260,9 +275,8 @@ model ProductVariant {
   price     Decimal @db.Decimal(12, 2)
   isActive  Boolean @default(true)
 
-  product    Product      @relation(fields: [productId], references: [id])
+  product    Product     @relation(fields: [productId], references: [id])
   orderItems OrderItem[]
-  recipes    RecipeItem[]
 
   @@unique([productId, name])
 }
@@ -445,8 +459,8 @@ model InventoryItem {
   movements          StockMovement[]
   requestItems       StockRequestItem[]
   outletRequestItems OutletStockRequestItem[]
-  recipes            RecipeItem[]
   wasteRecords       WasteRecord[]
+  lossReports        LossReport[]
 }
 
 model OutletStock {
@@ -454,6 +468,7 @@ model OutletStock {
   outletId        String
   inventoryItemId String
   quantity        Decimal  @default(0) @db.Decimal(12, 3)
+  minimumQuantity Decimal  @default(0) @db.Decimal(12, 3)
   updatedAt       DateTime @updatedAt
 
   outlet        Outlet        @relation(fields: [outletId], references: [id])
@@ -473,13 +488,62 @@ model StockMovement {
   quantity            Decimal           @db.Decimal(12, 3)
   note                String?
   referenceCode       String?
+  lossReportId        String?           @unique
+  expectedQuantity    Decimal?          @db.Decimal(12, 3)
+  quantityBefore      Decimal?          @db.Decimal(12, 3)
+  quantityAfter       Decimal?          @db.Decimal(12, 3)
   createdAt           DateTime          @default(now())
 
   outlet        Outlet        @relation(fields: [outletId], references: [id])
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
   createdBy     User          @relation(fields: [createdById], references: [id])
+  lossReport    LossReport?   @relation(fields: [lossReportId], references: [id], onDelete: Restrict)
 
   @@unique([outletId, createdById, clientTransactionId])
+  @@index([outletId, inventoryItemId, createdAt])
+}
+
+model OutletProductAvailability {
+  id          String   @id @default(cuid())
+  outletId    String
+  productId   String
+  isAvailable Boolean  @default(true)
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  outlet    Outlet  @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  updatedBy User    @relation("OutletProductAvailabilityUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([outletId, productId])
+  @@index([outletId, isAvailable])
+}
+
+model LossReport {
+  id              String           @id @default(cuid())
+  outletId        String
+  reportedById    String
+  inventoryItemId String
+  itemName        String
+  quantity        Decimal          @db.Decimal(12, 3)
+  unit            String
+  reason          String
+  description     String?
+  status          LossReportStatus @default(PENDING)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNote      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  outlet        Outlet         @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  reportedBy    User           @relation("LossReportReportedBy", fields: [reportedById], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem  @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  reviewedBy    User?          @relation("LossReportReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict)
+  stockMovement StockMovement?
+
+  @@index([outletId, status, createdAt])
   @@index([outletId, inventoryItemId, createdAt])
 }
 
@@ -551,22 +615,6 @@ model OutletStockRequestItem {
   inventoryItem InventoryItem      @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@unique([requestId, inventoryItemId])
-}
-
-// ==========================================
-// RECIPE & AUTOMATIC STOCK USAGE
-// ==========================================
-
-model RecipeItem {
-  id               String  @id @default(cuid())
-  productVariantId String
-  inventoryItemId  String
-  quantity         Decimal @db.Decimal(12, 3)
-
-  productVariant ProductVariant @relation(fields: [productVariantId], references: [id])
-  inventoryItem  InventoryItem  @relation(fields: [inventoryItemId], references: [id])
-
-  @@unique([productVariantId, inventoryItemId])
 }
 
 // ==========================================

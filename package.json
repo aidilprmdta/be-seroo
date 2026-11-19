@@ -4,10 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node src/index.js",
     "test": "node --test",
     "dev": "node --watch src/index.js",
     "db:seed": "prisma db seed",
-    "db:seed:dev-account": "node prisma/seed-dev-account.js"
+    "db:seed:catalog": "node prisma/seed-catalog.js",
+    "db:seed:dev-account": "node prisma/seed-dev-account.js",
+    "db:seed:e2e": "node prisma/seed-e2e.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

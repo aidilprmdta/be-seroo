@@ -14,7 +14,10 @@ CREATE TYPE "PaymentMethod" AS ENUM ('CASH', 'QRIS', 'SPLIT');
 CREATE TYPE "PaymentStatus" AS ENUM ('RECORDED', 'PENDING_RECONCILIATION', 'BELUM_LUNAS', 'LUNAS', 'REFUNDED');
 
 -- CreateEnum
-CREATE TYPE "StockMovementType" AS ENUM ('IN', 'OUT', 'WASTE', 'ADJUSTMENT', 'TRANSFER_IN', 'TRANSFER_OUT');
+CREATE TYPE "StockMovementType" AS ENUM ('IN', 'OUT', 'WASTE', 'ADJUSTMENT', 'TRANSFER_IN', 'TRANSFER_OUT', 'LOSS');
+
+-- CreateEnum
+CREATE TYPE "LossReportStatus" AS ENUM ('PENDING', 'CONFIRMED', 'REJECTED');
 
 -- CreateEnum
 CREATE TYPE "StockRequestStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED');
@@ -142,6 +145,19 @@ CREATE TABLE "Product" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OutletProductAvailability" (
+    "id" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "isAvailable" BOOLEAN NOT NULL DEFAULT true,
+    "updatedById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "OutletProductAvailability_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -309,6 +325,7 @@ CREATE TABLE "OutletStock" (
     "outletId" TEXT NOT NULL,
     "inventoryItemId" TEXT NOT NULL,
     "quantity" DECIMAL(12,3) NOT NULL DEFAULT 0,
+    "minimumQuantity" DECIMAL(12,3) NOT NULL DEFAULT 0,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "OutletStock_pkey" PRIMARY KEY ("id")
@@ -322,8 +339,12 @@ CREATE TABLE "StockMovement" (
     "createdById" TEXT NOT NULL,
     "clientTransactionId" TEXT,
     "payloadHash" TEXT,
+    "lossReportId" TEXT,
     "type" "StockMovementType" NOT NULL,
     "quantity" DECIMAL(12,3) NOT NULL,
+    "expectedQuantity" DECIMAL(12,3),
+    "quantityBefore" DECIMAL(12,3),
+    "quantityAfter" DECIMAL(12,3),
     "note" TEXT,
     "referenceCode" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -388,16 +409,6 @@ CREATE TABLE "OutletStockRequestItem" (
 );
 
 -- CreateTable
-CREATE TABLE "RecipeItem" (
-    "id" TEXT NOT NULL,
-    "productVariantId" TEXT NOT NULL,
-    "inventoryItemId" TEXT NOT NULL,
-    "quantity" DECIMAL(12,3) NOT NULL,
-
-    CONSTRAINT "RecipeItem_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "WasteRecord" (
     "id" TEXT NOT NULL,
     "outletId" TEXT NOT NULL,
@@ -414,6 +425,27 @@ CREATE TABLE "WasteRecord" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "WasteRecord_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "LossReport" (
+    "id" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "reportedById" TEXT NOT NULL,
+    "inventoryItemId" TEXT NOT NULL,
+    "itemName" TEXT NOT NULL,
+    "quantity" DECIMAL(12,3) NOT NULL,
+    "unit" TEXT NOT NULL,
+    "reason" TEXT NOT NULL,
+    "description" TEXT,
+    "status" "LossReportStatus" NOT NULL DEFAULT 'PENDING',
+    "reviewedById" TEXT,
+    "reviewedAt" TIMESTAMP(3),
+    "reviewNote" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LossReport_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -598,7 +630,19 @@ CREATE UNIQUE INDEX "OutletStockRequest_outletId_requestedById_clientTransaction
 CREATE UNIQUE INDEX "OutletStockRequestItem_requestId_inventoryItemId_key" ON "OutletStockRequestItem"("requestId", "inventoryItemId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "RecipeItem_productVariantId_inventoryItemId_key" ON "RecipeItem"("productVariantId", "inventoryItemId");
+CREATE UNIQUE INDEX "OutletProductAvailability_outletId_productId_key" ON "OutletProductAvailability"("outletId", "productId");
+
+-- CreateIndex
+CREATE INDEX "OutletProductAvailability_outletId_isAvailable_idx" ON "OutletProductAvailability"("outletId", "isAvailable");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StockMovement_lossReportId_key" ON "StockMovement"("lossReportId");
+
+-- CreateIndex
+CREATE INDEX "LossReport_outletId_status_createdAt_idx" ON "LossReport"("outletId", "status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "LossReport_outletId_inventoryItemId_createdAt_idx" ON "LossReport"("outletId", "inventoryItemId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "WasteRecord_outletId_wasteDate_idx" ON "WasteRecord"("outletId", "wasteDate");
@@ -763,10 +807,28 @@ ALTER TABLE "OutletStockRequestItem" ADD CONSTRAINT "OutletStockRequestItem_requ
 ALTER TABLE "OutletStockRequestItem" ADD CONSTRAINT "OutletStockRequestItem_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RecipeItem" ADD CONSTRAINT "RecipeItem_productVariantId_fkey" FOREIGN KEY ("productVariantId") REFERENCES "ProductVariant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OutletProductAvailability" ADD CONSTRAINT "OutletProductAvailability_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "Outlet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RecipeItem" ADD CONSTRAINT "RecipeItem_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OutletProductAvailability" ADD CONSTRAINT "OutletProductAvailability_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OutletProductAvailability" ADD CONSTRAINT "OutletProductAvailability_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LossReport" ADD CONSTRAINT "LossReport_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "Outlet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LossReport" ADD CONSTRAINT "LossReport_reportedById_fkey" FOREIGN KEY ("reportedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LossReport" ADD CONSTRAINT "LossReport_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LossReport" ADD CONSTRAINT "LossReport_reviewedById_fkey" FOREIGN KEY ("reviewedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "StockMovement" ADD CONSTRAINT "StockMovement_lossReportId_fkey" FOREIGN KEY ("lossReportId") REFERENCES "LossReport"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "WasteRecord" ADD CONSTRAINT "WasteRecord_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "Outlet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -807,3 +869,26 @@ ALTER TABLE "ClosingAudit" ADD CONSTRAINT "ClosingAudit_outletId_fkey" FOREIGN K
 -- AddForeignKey
 ALTER TABLE "ClosingAudit" ADD CONSTRAINT "ClosingAudit_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+
+
+-- Data integrity constraints (PostgreSQL)
+ALTER TABLE "OutletStock" ADD CONSTRAINT "OutletStock_quantity_nonnegative_check" CHECK ("quantity" >= 0);
+ALTER TABLE "OutletStock" ADD CONSTRAINT "OutletStock_minimumQuantity_nonnegative_check" CHECK ("minimumQuantity" >= 0);
+ALTER TABLE "StockMovement" ADD CONSTRAINT "StockMovement_quantity_nonzero_check" CHECK ("quantity" <> 0);
+ALTER TABLE "StockMovement" ADD CONSTRAINT "StockMovement_expectedQuantity_positive_check" CHECK ("expectedQuantity" IS NULL OR ("type" = 'IN' AND "expectedQuantity" > 0));
+ALTER TABLE "StockMovement" ADD CONSTRAINT "StockMovement_quantity_snapshot_check" CHECK (
+  ("quantityBefore" IS NULL AND "quantityAfter" IS NULL)
+  OR (
+    "quantityBefore" IS NOT NULL AND "quantityAfter" IS NOT NULL
+    AND "quantityBefore" >= 0 AND "quantityAfter" >= 0
+    AND "quantityAfter" - "quantityBefore" = "quantity"
+  )
+);
+ALTER TABLE "WasteRecord" ADD CONSTRAINT "WasteRecord_quantity_positive_check" CHECK ("quantity" > 0);
+ALTER TABLE "LossReport" ADD CONSTRAINT "LossReport_quantity_positive_check" CHECK ("quantity" > 0);
+ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_quantity_positive_check" CHECK ("quantity" > 0);
+ALTER TABLE "Expense" ADD CONSTRAINT "Expense_amount_positive_check" CHECK ("amount" > 0);
+ALTER TABLE "OrderPayment" ADD CONSTRAINT "OrderPayment_amount_positive_check" CHECK ("amount" > 0);
+ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_price_nonnegative_check" CHECK ("price" >= 0);
+ALTER TABLE "AddOn" ADD CONSTRAINT "AddOn_price_nonnegative_check" CHECK ("price" >= 0);
+ALTER TABLE "CashOpening" ADD CONSTRAINT "CashOpening_openingCash_nonnegative_check" CHECK ("openingCash" >= 0);

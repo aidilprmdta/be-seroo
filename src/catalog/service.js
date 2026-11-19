@@ -138,6 +138,37 @@ export async function updateProduct(prisma, productId, data) {
   };
 }
 
+export async function createVariant(prisma, { productId, name, price, isActive }) {
+  const product = await prisma.product.findUnique({ where: { id: productId } });
+  if (!product) {
+    throw new CatalogAdminError("NOT_FOUND", 404, "Produk tidak ditemukan.");
+  }
+
+  const trimmedName = name?.trim();
+  if (!trimmedName) {
+    throw new CatalogAdminError("VALIDATION_ERROR", 400, "Nama varian wajib diisi.");
+  }
+  const priceNumber = Number(price);
+  if (isNaN(priceNumber) || priceNumber < 0) {
+    throw new CatalogAdminError(
+      "VALIDATION_ERROR",
+      400,
+      "Harga varian harus berupa angka non-negatif.",
+    );
+  }
+
+  const created = await prisma.productVariant.create({
+    data: {
+      productId,
+      name: trimmedName,
+      price: new Prisma.Decimal(priceNumber.toString()),
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+    },
+  });
+
+  return { ...created, price: created.price.toString() };
+}
+
 export async function updateVariant(prisma, variantId, data) {
   const existing = await prisma.productVariant.findUnique({
     where: { id: variantId },
