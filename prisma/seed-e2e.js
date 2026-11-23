@@ -459,8 +459,9 @@ export async function seedE2eData(prisma, { hashPasswordFn = hashPassword } = {}
           },
         },
         create: {
-          outletId: "outlet-rumbai",
-          productId: prodId,
+          outlet: { connect: { id: "outlet-rumbai" } },
+          product: { connect: { id: prodId } },
+          updatedBy: { connect: { id: "user-admin-pusat" } },
           isAvailable: true,
         },
         update: {
