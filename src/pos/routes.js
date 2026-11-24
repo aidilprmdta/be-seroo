@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createAuthenticationMiddleware } from "../auth/middleware.js";
 import { writeAuditLog } from "../audit/service.js";
 import { toJakartaDateString } from "../reports/service.js";
+import { withFinancialLock } from "../closings/service.js";
 import { PosError } from "./errors.js";
 
 const ORDER_INCLUDE = {
@@ -19,6 +20,93 @@ const ORDER_INCLUDE = {
   cancelledBy: { select: { id: true, name: true } },
 };
 
+const PAYMENT_STATE_CONFLICT_MESSAGE =
+  "Status pembayaran transaksi ini tidak dapat diverifikasi. Muat ulang daftar; bila tetap sama, hubungi Manager untuk memeriksa transaksi ini.";
+
+// Menilai apakah pembayaran QRIS sebuah order boleh diverifikasi. Seluruh keputusan dibuat dari
+// data yang dibaca dan dilempar SEBELUM ada penulisan apa pun.
+// Mengembalikan baris QRIS pending yang harus diubah (kosong hanya untuk order QRIS lama
+// tanpa baris OrderPayment, yang diverifikasi lewat fallback legacy pada Order saja).
+function resolveQrisVerification(order) {
+  const payments = order.payments || [];
+  const alreadyVerified = () =>
+    new PosError(
+      "PAYMENT_ALREADY_VERIFIED",
+      400,
+      "Pembayaran QRIS untuk transaksi ini sudah terverifikasi.",
+    );
+  const conflict = () => new PosError("PAYMENT_STATE_CONFLICT", 409, PAYMENT_STATE_CONFLICT_MESSAGE);
+  const notQris = () =>
+    new PosError("INVALID_PAYMENT_METHOD", 400, "Transaksi ini tidak menggunakan metode QRIS.");
+
+  // Fallback legacy: order QRIS lama tanpa baris pembayaran.
+  if (payments.length === 0) {
+    if (order.paymentMethod !== "QRIS") {
+      throw order.paymentMethod === "SPLIT" ? conflict() : notQris();
+    }
+    if (order.paymentStatus === "LUNAS") throw alreadyVerified();
+    if (order.paymentStatus !== "PENDING_RECONCILIATION") throw conflict();
+    return [];
+  }
+
+  // Kompatibilitas metode: createOrder hanya membuat baris CASH/QRIS dan menurunkan metode order
+  // dari himpunan metode baris (semua CASH -> CASH, semua QRIS -> QRIS, campuran -> SPLIT).
+  // Order yang metodenya tidak sama dengan turunan itu tidak konsisten dan tidak boleh diverifikasi.
+  const lineMethods = new Set(payments.map((p) => p.paymentMethod));
+  if ([...lineMethods].some((method) => method !== "CASH" && method !== "QRIS")) {
+    throw conflict();
+  }
+  const derivedMethod = lineMethods.size > 1 ? "SPLIT" : [...lineMethods][0];
+  if (derivedMethod !== order.paymentMethod) throw conflict();
+
+  // Order sudah punya baris pembayaran: wajib ada baris QRIS, dan seluruh baris harus konsisten.
+  const qrisLines = payments.filter((p) => p.paymentMethod === "QRIS");
+  if (qrisLines.length === 0) {
+    // Setelah cek kompatibilitas, hanya order CASH murni yang sampai di sini.
+    throw notQris();
+  }
+
+  const consistent = payments.every(
+    (p) =>
+      p.paymentStatus === "LUNAS" ||
+      (p.paymentMethod === "QRIS" && p.paymentStatus === "PENDING_RECONCILIATION"),
+  );
+  if (!consistent) throw conflict();
+
+  const pending = qrisLines.filter((p) => p.paymentStatus === "PENDING_RECONCILIATION");
+  if (pending.length === 0) {
+    // Semua baris sudah LUNAS: terverifikasi bila order juga LUNAS, selain itu tidak konsisten.
+    if (order.paymentStatus === "LUNAS") throw alreadyVerified();
+    throw conflict();
+  }
+  if (order.paymentStatus !== "PENDING_RECONCILIATION") throw conflict();
+  return pending;
+}
+
+// Memblokir perubahan pada transaksi yang periode hariannya sudah CLOSED.
+// Aturan identik dengan pembatalan: kunci DAILY + tanggal Jakarta dari createdAt,
+// diblokir hanya bila status CLOSED (REOPENED dianggap terbuka).
+async function assertDailyPeriodOpen(client, { outletId, createdAt, actionLabel }) {
+  if (!client.closingRecord?.findUnique) {
+    return;
+  }
+  const closing = await client.closingRecord.findUnique({
+    where: {
+      outletId_closingType_periodKey: {
+        outletId,
+        closingType: "DAILY",
+        periodKey: toJakartaDateString(createdAt),
+      },
+    },
+  });
+  if (closing && closing.status === "CLOSED") {
+    throw new PosError(
+      "PERIOD_CLOSED",
+      400,
+      `Periode transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk ${actionLabel}.`,
+    );
+  }
+}
 const decimalString = z
   .string()
   .max(13)
@@ -310,15 +398,20 @@ async function createOrder({
   now,
   orderNumberFactory,
 }) {
+  console.error("DEBUG createOrder: called with outletId:", outletId, "crewId:", crewId, "payload keys:", Object.keys(payload || {}));
   const payloadDigest = hashPayload(payload);
   const uniqueWhere = idempotencyWhere({
     outletId,
     crewId,
     clientTransactionId: payload.clientTransactionId,
   });
+  console.error("DEBUG createOrder: uniqueWhere:", JSON.stringify(uniqueWhere));
   const existing = await prisma.order.findUnique({
     where: uniqueWhere,
     include: ORDER_INCLUDE,
+  }).catch((err) => {
+    console.error("DEBUG findUnique error:", err);
+    throw err;
   });
   if (existing) {
     return { order: existingOrderResult(existing, payloadDigest), replayed: true };
@@ -353,27 +446,23 @@ async function createOrder({
       }
 
       // Validasi ketersediaan menu per outlet (OutletProductAvailability)
+      let availableProductIds = new Set();
       if (tx.outletProductAvailability?.findMany) {
-        const productIds = [...new Set(variantsResult.map((v) => v.product.id))];
         const availabilities = await tx.outletProductAvailability.findMany({
-          where: {
-            outletId,
-            productId: { in: productIds },
-            isAvailable: true,
-          },
+          where: { outletId },
           select: { productId: true },
         });
-        const availableProductIds = new Set(availabilities.map((a) => a.productId));
-        const unavailableVariant = variantsResult.find(
-          (v) => !availableProductIds.has(v.product.id),
+        availableProductIds = new Set(availabilities.map((a) => a.productId));
+      }
+      const unavailableVariant = variantsResult.find(
+        (v) => !availableProductIds.has(v.product.id),
+      );
+      if (unavailableVariant) {
+        throw new PosError(
+          "CATALOG_ITEM_UNAVAILABLE",
+          409,
+          `Produk "${unavailableVariant.product.name}" tidak tersedia di outlet ini. Muat ulang katalog.`,
         );
-        if (unavailableVariant) {
-          throw new PosError(
-            "CATALOG_ITEM_UNAVAILABLE",
-            409,
-            `Produk "${unavailableVariant.product.name}" tidak tersedia di outlet ini. Muat ulang katalog.`,
-          );
-        }
       }
 
       const addOnIds = [
@@ -654,17 +743,26 @@ export function createPosRoutes({
     const outletId = c.req.param("outletId");
     assertOutletId(outletId);
     const auth = c.get("auth");
+    console.error("DEBUG route: requireCrewMembership for", auth.userId, outletId);
     await requireCrewMembership(prisma, auth.userId, outletId);
+    console.error("DEBUG route: requireCrewMembership ok");
 
     const payload = readBody(await readJson(c));
-    const result = await createOrder({
-      prisma,
-      outletId,
-      crewId: auth.userId,
-      payload,
-      now,
-      orderNumberFactory,
-    });
+    console.error("DEBUG route: creating order for outlet", outletId, "payload keys:", Object.keys(payload || {}));
+    let result;
+    try {
+      result = await createOrder({
+        prisma,
+        outletId,
+        crewId: auth.userId,
+        payload,
+        now,
+        orderNumberFactory,
+      });
+    } catch (error) {
+      console.error("DEBUG createOrder error:", error.message);
+      throw error;
+    }
 
     await writeAuditLog(prisma, {
       actorUserId: auth.userId,
@@ -745,51 +843,111 @@ export function createPosRoutes({
       );
     }
 
-    const verifyTime = now();
-    const updatedOrder = await prisma.$transaction(async (tx) => {
-      if (pendingPayments.length > 0) {
-        for (const p of pendingPayments) {
-          await tx.orderPayment.update({
-            where: { id: p.id },
-            data: {
-              paymentStatus: "LUNAS",
-              verifiedAt: verifyTime,
-              verifiedById: auth.userId,
-              notes: body.notes ? (p.notes ? `${p.notes}; ${body.notes}` : body.notes) : p.notes,
-            },
-          });
+    // Acquire financial lock within the transaction (lock covers all financial ops per outlet)
+    const result = await prisma.$transaction(async (tx) => {
+      return withFinancialLock(tx, outletId, async () => {
+        // Re-fetch order within the transaction (uses tx, not root prisma)
+        const updatedOrder = await tx.order.findUnique({
+          where: { id: orderId },
+          include: ORDER_INCLUDE,
+        });
+
+        if (!updatedOrder || updatedOrder.outletId !== outletId) {
+          throw new PosError("ORDER_NOT_FOUND", 404, "Transaksi tidak ditemukan.");
         }
-      }
 
-      return tx.order.update({
-        where: { id: orderId },
-        data: {
-          paymentStatus: "LUNAS",
-          verifiedAt: verifyTime,
-          verifiedById: auth.userId,
-        },
-        include: ORDER_INCLUDE,
+        const updatedPayments = updatedOrder.payments || [];
+        const hasQrisAgain =
+          updatedOrder.paymentMethod === "QRIS" ||
+          updatedPayments.some((p) => p.paymentMethod === "QRIS");
+
+        if (!hasQrisAgain) {
+          throw new PosError(
+            "INVALID_PAYMENT_METHOD",
+            400,
+            "Transaksi ini tidak menggunakan metode QRIS.",
+          );
+        }
+
+        const updatedPendingPayments = updatedPayments.filter(
+          (p) => p.paymentMethod === "QRIS" && p.paymentStatus === "PENDING_RECONCILIATION",
+        );
+
+        if (updatedPendingPayments.length === 0 && updatedOrder.paymentStatus === "LUNAS") {
+          throw new PosError(
+            "PAYMENT_ALREADY_VERIFIED",
+            400,
+            "Pembayaran QRIS untuk transaksi ini sudah terverifikasi.",
+          );
+        }
+
+        // Check if period is closed (financial lock ensures serialization)
+        const dateStr = toJakartaDateString(updatedOrder.createdAt);
+        const closing = await tx.closingRecord.findUnique({
+          where: {
+            outletId_closingType_periodKey: {
+              outletId,
+              closingType: "DAILY",
+              periodKey: dateStr,
+            },
+          },
+        });
+        if (closing && closing.status === "CLOSED") {
+          throw new PosError(
+            "PERIOD_CLOSED",
+            400,
+            "Periode transaksi ini sudah ditutup closing.",
+          );
+        }
+
+        const paymentStatus = resolveQrisVerification(updatedOrder);
+
+        if (paymentStatus.length > 0) {
+          for (const p of paymentStatus) {
+            await tx.orderPayment.update({
+              where: { id: p.id },
+              data: {
+                paymentStatus: "LUNAS",
+                verifiedAt: verifyTime,
+                verifiedById: auth.userId,
+                notes: body.notes ? (p.notes ? `${p.notes}; ${body.notes}` : body.notes) : p.notes,
+              },
+            });
+          }
+        }
+
+        const updatedOrderResult = await tx.order.update({
+          where: { id: orderId },
+          data: {
+            paymentStatus: "LUNAS",
+            verifiedAt: verifyTime,
+            verifiedById: auth.userId,
+          },
+          include: ORDER_INCLUDE,
+        });
+
+        await writeAuditLog(tx, {
+          actorUserId: auth.userId,
+          sessionId: auth.sessionId,
+          outletId,
+          action: "QRIS_VERIFIED",
+          resourceType: "Order",
+          resourceId: orderId,
+          metadata: {
+            paymentStatus: "LUNAS",
+            verifiedAt: verifyTime.toISOString(),
+            notesProvided: Boolean(body.notes),
+          },
+        });
+
+        return updatedOrderResult;
       });
-    });
-
-    await writeAuditLog(prisma, {
-      actorUserId: auth.userId,
-      sessionId: auth.sessionId,
-      outletId,
-      action: "QRIS_VERIFIED",
-      resourceType: "Order",
-      resourceId: orderId,
-      metadata: {
-        paymentStatus: "LUNAS",
-        verifiedAt: verifyTime.toISOString(),
-        notesProvided: Boolean(body.notes),
-      },
     });
 
     return c.json({
       success: true,
       data: {
-        order: orderDto(updatedOrder),
+        order: orderDto(result),
         verifiedAt: verifyTime.toISOString(),
         verifiedBy: { id: auth.userId },
       },
@@ -900,6 +1058,7 @@ export function createPosRoutes({
       notes: z.string().trim().max(255).optional(),
     });
 
+
   routes.post("/:outletId/orders/:orderId/cancel", authenticate, async (c) => {
     const outletId = c.req.param("outletId");
     const orderId = c.req.param("orderId");
@@ -943,98 +1102,100 @@ export function createPosRoutes({
       );
     }
 
-    // Periksa apakah periode transaksi sudah ditutup closing
-    if (prisma.closingRecord?.findUnique) {
-      const dateStr = toJakartaDateString(order.createdAt);
-      const closing = await prisma.closingRecord.findUnique({
-        where: {
-          outletId_closingType_periodKey: {
-            outletId,
-            closingType: "DAILY",
-            periodKey: dateStr,
-          },
-        },
-      });
-      if (closing && closing.status === "CLOSED") {
-        throw new PosError(
-          "PERIOD_CLOSED",
-          400,
-          "Periode transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membatalkan transaksi.",
-        );
-      }
-    }
-
-    const cancelTime = now();
-    const updatedOrder = await prisma.$transaction(async (tx) => {
-      // 1. Perbarui status setiap pembayaran menjadi REFUNDED
-      if (order.payments && order.payments.length > 0) {
-        for (const p of order.payments) {
-          if (tx.orderPayment?.update) {
-            await tx.orderPayment.update({
-              where: { id: p.id },
-              data: {
-                paymentStatus: "REFUNDED",
-                notes: p.notes
-                  ? `${p.notes}; Dibatalkan: ${body.reason}`
-                  : `Dibatalkan: ${body.reason}`,
-              },
-            });
-          }
-        }
-      }
-
-      // 2. Catat riwayat status perubahan
-      if (tx.orderStatusHistory?.create) {
-        await tx.orderStatusHistory.create({
-          data: {
-            orderId: order.id,
-            fromStatus: order.status,
-            toStatus: "CANCELLED",
-            reason: body.reason,
-            actorId: auth.userId,
-            createdAt: cancelTime,
+    // Acquire financial lock within the transaction (lock covers all financial ops per outlet)
+    const result = await prisma.$transaction(async (tx) => {
+      return withFinancialLock(tx, outletId, async () => {
+        // Check if period is closed (financial lock ensures serialization)
+        const dateStr = toJakartaDateString(order.createdAt);
+        const closing = await tx.closingRecord.findUnique({
+          where: {
+            outletId_closingType_periodKey: {
+              outletId,
+              closingType: "DAILY",
+              periodKey: dateStr,
+            },
           },
         });
-      }
+        if (closing && closing.status === "CLOSED") {
+          throw new PosError(
+            "PERIOD_CLOSED",
+            400,
+            "Periode transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membatalkan transaksi.",
+          );
+        }
 
-      // 3. Update pesanan menjadi CANCELLED & REFUNDED
-      const cancelled = await tx.order.update({
-        where: { id: order.id },
-        data: {
-          status: "CANCELLED",
-          paymentStatus: "REFUNDED",
-          cancelledAt: cancelTime,
-          cancelledById: auth.userId,
-          cancellationReason: body.reason,
-          isWasteRecorded: Boolean(body.recordWaste),
-        },
-        include: ORDER_INCLUDE,
-      });
+        const cancelTime = now();
 
-      // 4. Penanganan Waste vs Pengembalian Stok
-      if (body.recordWaste) {
-        // Minuman sudah dibuat dan akhirnya terbuang -> Catat WasteRecord
-        if (tx.wasteRecord?.create) {
-          for (let i = 0; i < (order.items || []).length; i++) {
-            const it = order.items[i];
-            await tx.wasteRecord.create({
-              data: {
-                outletId,
-                createdById: auth.userId,
-                clientTransactionId: `waste:cancel:${order.id}:${it.id || i}`,
-                itemName: `${it.productName} - ${it.variantName}`,
-                category: "PRODUK_BATAL",
-                quantity: new Prisma.Decimal(it.quantity.toString()),
-                unit: "cup",
-                description: `Pesanan dibatalkan #${order.orderNumber}: ${body.reason}`,
-                wasteDate: cancelTime,
-                createdAt: cancelTime,
-              },
-            });
+        // 1. Perbarui status setiap pembayaran menjadi REFUNDED
+        if (order.payments && order.payments.length > 0) {
+          for (const p of order.payments) {
+            if (tx.orderPayment?.update) {
+              await tx.orderPayment.update({
+                where: { id: p.id },
+                data: {
+                  paymentStatus: "REFUNDED",
+                  notes: p.notes
+                    ? `${p.notes}; Dibatalkan: ${body.reason}`
+                    : `Dibatalkan: ${body.reason}`,
+                },
+              });
+            }
           }
         }
-      }
-      return cancelled;
+
+        // 2. Catat riwayat status perubahan
+        if (tx.orderStatusHistory?.create) {
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              fromStatus: order.status,
+              toStatus: "CANCELLED",
+              reason: body.reason,
+              actorId: auth.userId,
+              createdAt: cancelTime,
+            },
+          });
+        }
+
+        // 3. Update pesanan menjadi CANCELLED & REFUNDED
+        const updatedOrder = await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: "CANCELLED",
+            paymentStatus: "REFUNDED",
+            cancelledAt: cancelTime,
+            cancelledById: auth.userId,
+            cancellationReason: body.reason,
+            isWasteRecorded: Boolean(body.recordWaste),
+          },
+          include: ORDER_INCLUDE,
+        });
+
+        // 4. Penanganan Waste vs Pengembalian Stok
+        if (body.recordWaste) {
+          if (tx.wasteRecord?.create) {
+            for (let i = 0; i < (order.items || []).length; i++) {
+              const it = order.items[i];
+              await tx.wasteRecord.create({
+                data: {
+                  outletId,
+                  createdById: auth.userId,
+                  clientTransactionId: `waste:cancel:${order.id}:${it.id || i}`,
+                  itemName: `${it.productName} - ${it.variantName}`,
+                  category: "PRODUK_BATAL",
+                  quantity: new Prisma.Decimal(it.quantity.toString()),
+                  unit: "cup",
+                  description: `Pesanan dibatalkan #${order.orderNumber}: ${body.reason}`,
+                  wasteDate: cancelTime,
+                  createdAt: cancelTime,
+                },
+              });
+            }
+          }
+        }
+
+        return updatedOrder;
+      });
     });
 
     await writeAuditLog(prisma, {
@@ -1055,7 +1216,7 @@ export function createPosRoutes({
     return c.json({
       success: true,
       data: {
-        order: orderDto(updatedOrder),
+        order: orderDto(result),
         cancellation: {
           cancelledAt: cancelTime.toISOString(),
           cancelledBy: { id: auth.userId },

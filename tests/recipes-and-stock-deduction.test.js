@@ -96,6 +96,18 @@ function createDatabase() {
         );
       },
     },
+    outletProductAvailability: {
+      async findMany({ where }) {
+        if (where?.outletId === "outlet-rumbai") {
+          return [
+            { productId: "prod-tea", outletId: "outlet-rumbai", isAvailable: true },
+            { productId: "prod-coffee", outletId: "outlet-rumbai", isAvailable: true },
+          ];
+        }
+        return [];
+      },
+    },
+
     product: {
       async findMany() {
         return state.products.map((p) => ({
@@ -358,6 +370,7 @@ function createDatabase() {
         return { ...ord, payments: createdPayments };
       },
     },
+    $executeRaw: () => Promise.resolve({ command: "SELECT", rowCount: 1 }),
     $transaction: async (cb) => cb(prisma),
   };
 

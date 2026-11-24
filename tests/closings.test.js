@@ -23,6 +23,7 @@ function createClosingDatabase(role = "MANAGER") {
     closings: [],
     histories: [],
     audits: [],
+    waste: [],
   };
 
   const memberships = new Map([
@@ -42,6 +43,12 @@ function createClosingDatabase(role = "MANAGER") {
           user: { id: "user-1", isActive: true },
         };
       },
+    },
+    $executeRaw: function(...args) {
+      // Handle tagged template literals: $executeRaw`SELECT ... ${value} ...`
+      // args[0] is an array of string literals
+      console.log('[DEBUG] \$executeRaw called with:', args);
+      return Promise.resolve({ command: "SELECT", rowCount: 1 });
     },
     outletMembership: {
       async findUnique({ where }) {
@@ -97,6 +104,12 @@ function createClosingDatabase(role = "MANAGER") {
             ...exp,
             amount: new Prisma.Decimal(exp.amount.toString()),
           }));
+      },
+    },
+    cashOpening: {
+      async findUnique({ where }) {
+        // Mock: return null (no cash opening recorded)
+        return null;
       },
     },
     closingRecord: {
@@ -226,6 +239,153 @@ function createClosingDatabase(role = "MANAGER") {
         state.audits.push(audit);
         return audit;
       },
+    },
+    $transaction: function(fn) {
+      // Create a mock transaction client
+      const tx = {
+        $queryRaw: async function(...args) {
+          return Promise.resolve({ command: "SELECT", rowCount: 1 });
+        },
+        closingRecord: {
+          findUnique: async (args) => {
+            if (args.where.id) {
+              return state.closings.find((c) => c.id === args.where.id) || null;
+            }
+            const key = args.where.outletId_closingType_periodKey;
+            if (key) {
+              const rec = state.closings.find(
+                (c) =>
+                  c.outletId === key.outletId &&
+                  c.closingType === key.closingType &&
+                  c.periodKey === key.periodKey,
+              );
+              if (!rec) return null;
+              return {
+                ...rec,
+                closedBy: { id: rec.closedById, name: "Manager Seroo" },
+                reopenedBy: rec.reopenedById
+                  ? { id: rec.reopenedById, name: "Manager Seroo" }
+                  : null,
+                history: state.histories.filter((h) => h.closingId === rec.id),
+                audits: state.audits.filter((a) => a.closingId === rec.id),
+              };
+            }
+            return null;
+          },
+          findMany: async () => state.closings,
+          create: async (args) => {
+            const newRecord = {
+              id: `closing-${state.closings.length + 1}`,
+              ...args.data,
+              closedBy: { id: args.data.closedById, name: "Manager Seroo" },
+              reopenedBy: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            };
+            state.closings.push(newRecord);
+            return newRecord;
+          },
+          update: async (args) => {
+            const idx = state.closings.findIndex((c) => c.id === args.where.id);
+            if (idx === -1) throw new Error("Closing not found");
+            const updated = {
+              ...state.closings[idx],
+              ...args.data,
+              updatedAt: new Date(),
+              closedBy: {
+                id: args.data.closedById || state.closings[idx].closedById,
+                name: "Manager Seroo",
+              },
+              reopenedBy: args.data.reopenedById
+                ? { id: args.data.reopenedById, name: "Manager Seroo" }
+                : null,
+            };
+            state.closings[idx] = updated;
+            return updated;
+          },
+        },
+        closingHistory: {
+          create: async (args) => {
+            const hist = {
+              id: `hist-${state.histories.length + 1}`,
+              ...args.data,
+              createdAt: new Date(),
+            };
+            state.histories.push(hist);
+            return hist;
+          },
+          update: async (args) => {
+            const idx = state.histories.findIndex((h) => h.id === args.where.id);
+            if (idx !== -1) {
+              state.histories[idx] = {
+                ...state.histories[idx],
+                ...args.data,
+              };
+              return state.histories[idx];
+            }
+            return null;
+          },
+        },
+        closingAudit: {
+          create: async (args) => {
+            const audit = {
+              id: `audit-${state.audits.length + 1}`,
+              ...args.data,
+              actor: { id: args.data.actorId, name: "Manager Seroo" },
+              createdAt: args.data.createdAt || new Date(),
+            };
+            state.audits.push(audit);
+            return audit;
+          },
+        },
+        order: {
+          findUnique: async (args) => {
+            const key = args.where;
+            const rec = state.orders.find(
+              (o) =>
+                o.id === key.id &&
+                o.outletId === key.outletId &&
+                o.crewId === key.crewId,
+            );
+            return rec || null;
+          },
+        },
+        orderPayment: {
+          update: async (args) => {
+            const idx = state.orders.findIndex((o) =>
+              o.payments?.some((p) => p.id === args.where.id),
+            );
+            if (idx === -1) throw new Error("Payment not found");
+            const order = state.orders[idx];
+            const payment = order.payments.find((p) => p.id === args.where.id);
+            if (payment) {
+              payment.paymentStatus = args.data.paymentStatus;
+              payment.verifiedAt = args.data.verifiedAt;
+              payment.verifiedById = args.data.verifiedById;
+              payment.notes = args.data.notes;
+            }
+            return payment;
+          },
+        },
+        orderStatusHistory: {
+          create: async (args) => {
+            const hist = {
+              id: `histord-${state.histories.length + 1}`,
+              ...args.data,
+            };
+            state.histories.push(hist);
+            return hist;
+          },
+        },
+        wasteRecord: {
+          create: async (args) => {
+            const w = { id: `waste-${state.waste.length + 1}`, ...args.data };
+            state.waste.push(w);
+            return w;
+          },
+        },
+      };
+      return fn(tx);
     },
   };
 

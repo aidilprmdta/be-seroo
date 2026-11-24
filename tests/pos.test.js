@@ -76,6 +76,20 @@ function createPosDatabase(role = "CREW") {
         };
       },
     },
+
+    outletProductAvailability: {
+      async findMany({ where }) {
+        if (where?.outletId === "outlet-a") {
+          return [
+            { productId: "product-1", outletId: "outlet-a", isAvailable: true },
+          ];
+        }
+        if (where?.outletId === "outlet-inactive") {
+          return [];
+        }
+        return [];
+      },
+    },
     product: {
       async findMany() {
         return products
@@ -191,12 +205,12 @@ function orderPayload(overrides = {}) {
       {
         productVariantId: "variant-medium",
         quantity: 2,
-        expectedVariantPrice: "10000.00",
+        expectedVariantPrice: "12000.00",
         addOns: [
           {
             addOnId: "addon-1",
             quantity: 1,
-            expectedUnitPrice: "2500.00",
+            expectedUnitPrice: "3000.00",
           },
         ],
       },

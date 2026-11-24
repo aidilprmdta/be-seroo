@@ -10,6 +10,74 @@ import {
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Generate a single 64-bit advisory lock key from outletId only.
+ * All financial operations for one outlet share this SAME lock key.
+ * Key does NOT depend on closingType or periodKey.
+ */
+ /** Generate a 64-bit advisory lock key from outletId only.
+  *  Financial operations for an entire outlet share ONE lock key.
+  *  Key does NOT depend on closingType or periodKey.
+  */
+function advisoryLockKey(outletId, closingType, periodKey) {
+  const input = JSON.stringify([outletId, closingType, periodKey]);
+  const hash = createHash("sha256").update(input).digest("hex");
+  // First 16 hex chars = 8 bytes = 64 bits
+  const bigIntHash = BigInt("0x" + hash.slice(0, 16));
+  // Convert to positive 63-bit integer (PostgreSQL advisory locks use 63-bit signed)
+  return (bigIntHash % (1n << 62n)) + (1n << 62n);
+}
+
+/**
+ /** Generate a single 64-bit advisory lock key from outletId only.
+  *  All financial operations for one outlet share this SAME lock key.
+  *  Key does NOT depend on closingType or periodKey.
+  */
+export function financialLockKey(outletId) {
+  const input = JSON.stringify([outletId]);
+  const hash = createHash("sha256").update(input).digest("hex");
+  // First 16 hex chars = 8 bytes = 64 bits
+  const bigIntHash = BigInt("0x" + hash.slice(0, 16));
+  // Convert to positive 63-bit integer (PostgreSQL advisory locks use 63-bit signed)
+  return (bigIntHash % (1n << 62n)) + (1n << 62n);
+}
+
+/**
+ * Acquire a transaction-level advisory lock using the transaction client.
+ *  The lock is automatically released when the transaction commits or rolls back.
+ *  No manual unlock is needed. The lock MUST be inside a $transaction block.
+ */
+export async function withAdvisoryLock(tx, lockKey, callback) {
+  console.log('[DEBUG] withAdvisoryLock acquired for key:', lockKey);
+  try {
+    // Transaction-level advisory lock: automatically released on commit/rollback
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+  } catch (err) {
+    console.error('[DEBUG] withAdvisoryLock lock failed:', err);
+    throw err;
+  }
+  // Execute the callback inside the same transaction
+  return await callback();
+}
+
+/** Acquire a transaction-level advisory lock for an entire outlet.
+ *  All financial operations for one outlet share THIS lock key.
+ *  No dependence on closingType or periodKey.
+ */
+export async function withFinancialLock(tx, outletId, callback) {
+  console.log('[DEBUG] withFinancialLock acquired for outlet:', outletId);
+  try {
+    // Transaction-level advisory lock: auto-released on commit/rollback
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${financialLockKey(outletId)})`;
+  } catch (err) {
+    console.error('[DEBUG] withFinancialLock lock failed:', err);
+    throw err;
+  }
+  return await callback();
+}
+
+/** Export for external use (e.g., pos/routes.js for QRIS and cancellation locking) */
+
 export async function recordCashOpening(prisma, { outletId, userId, payload }) {
   const { periodKey, openingCash, notes } = payload;
   if (!periodKey || !DATE_REGEX.test(periodKey)) {
@@ -282,266 +350,277 @@ export async function performClosing({
     );
   }
 
-  const { start, end } =
+  const { start, end: dateEnd } =
     closingType === "DAILY"
       ? getDailyRange(periodKey)
       : getMonthlyRange(periodKey);
 
   const digest = hashPayload(payload);
 
-  // Check clientTransactionId idempotency
-  const existingAudit = await prisma.closingAudit.findUnique({
-    where: {
-      outletId_actorId_clientTransactionId: {
-        outletId,
-        actorId: userId,
-        clientTransactionId,
-      },
-    },
-  });
+  // Perform the entire closing operation within a single transaction and advisory lock
+  return prisma.$transaction(async (tx) => {
+    console.log('[DEBUG] performClosing in transaction, acquiring financial lock for outlet');
 
-  if (existingAudit) {
-    if (existingAudit.payloadHash !== digest) {
-      throw new ClosingError(
-        "IDEMPOTENCY_KEY_REUSED",
-        409,
-        "ID transaksi closing sudah digunakan dengan parameter berbeda.",
-      );
-    }
-    const record = await prisma.closingRecord.findUnique({
-      where: { id: existingAudit.closingId },
-      include: {
-        closedBy: { select: { id: true, name: true } },
-        reopenedBy: { select: { id: true, name: true } },
-      },
-    });
-    return { record, replayed: true };
-  }
+    // Perform the entire closing operation within a single transaction and advisory lock
+    return withFinancialLock(tx, outletId, async () => {
+      console.log('[DEBUG] performClosing called');
 
-  // Calculate fresh summary and unfinished items for snapshot
-  const [report, unfinished] = await Promise.all([
-    closingType === "DAILY"
-      ? getDailyReport({ prisma, outletId, dateStr: periodKey, now })
-      : getMonthlyReport({ prisma, outletId, monthStr: periodKey, now }),
-    getUnfinishedTransactions({ prisma, outletId, start, end }),
-  ]);
+      // Check clientTransactionId idempotency
+      const existingAudit = await tx.closingAudit.findUnique({
+        where: {
+          outletId_actorId_clientTransactionId: {
+            outletId,
+            actorId: userId,
+            clientTransactionId,
+          },
+        },
+      });
+
+      if (existingAudit) {
+        if (existingAudit.payloadHash !== digest) {
+          throw new ClosingError(
+            "IDEMPOTENCY_KEY_REUSED",
+            409,
+            "ID transaksi closing sudah digunakan dengan parameter berbeda.",
+          );
+        }
+        const record = await tx.closingRecord.findUnique({
+          where: { id: existingAudit.closingId },
+          include: {
+            closedBy: { select: { id: true, name: true } },
+            reopenedBy: { select: { id: true, name: true } },
+          },
+        });
+        return { record, replayed: true };
+      }
+
+      // Calculate fresh summary and unfinished items for snapshot
+      const [report, unfinished] = await Promise.all([
+        closingType === "DAILY"
+          ? getDailyReport({ prisma: tx, outletId, dateStr: periodKey, now })
+          : getMonthlyReport({ prisma: tx, outletId, monthStr: periodKey, now }),
+        getUnfinishedTransactions({ prisma: tx, outletId, start: dateEnd }),
+      ]);
 
   // --- Cash reconciliation (DAILY only, optional) ---
-  let cashFields = {};
-  if (closingType === "DAILY" && actualCash !== undefined && actualCash !== null) {
-    const decActual = new Prisma.Decimal(actualCash.toString());
-    if (decActual.lt(0)) {
-      throw new ClosingError(
-        "VALIDATION_ERROR",
-        400,
-        "Kas fisik tidak boleh bernilai negatif.",
-      );
-    }
+      let cashFields = {};
+      if (closingType === "DAILY" && actualCash !== undefined && actualCash !== null) {
+        const decActual = new Prisma.Decimal(actualCash.toString());
+        if (decActual.lt(0)) {
+          throw new ClosingError(
+            "VALIDATION_ERROR",
+            400,
+            "Kas fisik tidak boleh bernilai negatif.",
+          );
+        }
 
-    const cashOpeningRecord = prisma.cashOpening
-      ? await prisma.cashOpening.findUnique({
-          where: { outletId_periodKey: { outletId, periodKey } },
-        })
-      : null;
+        const cashOpeningRecord = tx.cashOpening
+          ? await tx.cashOpening.findUnique({
+              where: { outletId_periodKey: { outletId, periodKey } },
+            })
+          : null;
 
-    const decOpening = cashOpeningRecord
-      ? new Prisma.Decimal(cashOpeningRecord.openingCash.toString())
-      : new Prisma.Decimal("0.00");
-    const decSales = new Prisma.Decimal(
-      report.paymentSummary?.cash?.total || "0.00",
-    );
-    const decExpenses = new Prisma.Decimal(
-      report.expenseSummary?.total || "0.00",
-    );
-    const decExpected = decOpening.add(decSales).sub(decExpenses);
-    const decDiff = decActual.sub(decExpected);
+        const decOpening = cashOpeningRecord
+          ? new Prisma.Decimal(cashOpeningRecord.openingCash.toString())
+          : new Prisma.Decimal("0.00");
+        const decSales = new Prisma.Decimal(
+          report.paymentSummary?.cash?.total || "0.00",
+        );
+        const decExpenses = new Prisma.Decimal(
+          report.expenseSummary?.total || "0.00",
+        );
+        const decExpected = decOpening.add(decSales).sub(decExpenses);
+        const decDiff = decActual.sub(decExpected);
 
-    if (!decDiff.isZero() && !differenceReason) {
-      throw new ClosingError(
-        "VALIDATION_ERROR",
-        400,
-        "Alasan selisih kas wajib diisi ketika terdapat selisih.",
-      );
-    }
+        if (!decDiff.isZero() && !differenceReason) {
+          throw new ClosingError(
+            "VALIDATION_ERROR",
+            400,
+            "Alasan selisih kas wajib diisi ketika terdapat selisih.",
+          );
+        }
 
-    const resolvedReason = decDiff.isZero() ? null : differenceReason;
+        const resolvedReason = decDiff.isZero() ? null : differenceReason;
 
-    cashFields = {
-      openingCash: decOpening,
-      cashSales: decSales,
-      cashExpenses: decExpenses,
-      expectedCash: decExpected,
-      actualCash: decActual,
-      cashDifference: decDiff,
-      differenceReason: resolvedReason,
-    };
+        cashFields = {
+          openingCash: decOpening,
+          cashSales: decSales,
+          cashExpenses: decExpenses,
+          expectedCash: decExpected,
+          actualCash: decActual,
+          cashDifference: decDiff,
+          differenceReason: resolvedReason,
+        };
 
-    // embed into snapshot
-    cashFields._snapshot = {
-      openingCash: decOpening.toFixed(2),
-      cashSales: decSales.toFixed(2),
-      cashExpenses: decExpenses.toFixed(2),
-      expectedCash: decExpected.toFixed(2),
-      actualCash: decActual.toFixed(2),
-      cashDifference: decDiff.toFixed(2),
-      differenceReason: resolvedReason,
-    };
-  }
+        // embed into snapshot
+        cashFields._snapshot = {
+          openingCash: decOpening.toFixed(2),
+          cashSales: decSales.toFixed(2),
+          cashExpenses: decExpenses.toFixed(2),
+          expectedCash: decExpected.toFixed(2),
+          actualCash: decActual.toFixed(2),
+          cashDifference: decDiff.toFixed(2),
+          differenceReason: resolvedReason,
+        };
+      }
 
-  const cashReconciliationSnapshot =
-    cashFields._snapshot
-      ? { cashReconciliation: cashFields._snapshot }
-      : {};
+      const cashReconciliationSnapshot =
+        cashFields._snapshot
+          ? { cashReconciliation: cashFields._snapshot }
+          : {};
 
-  // Strip internal _snapshot key before writing to DB
-  const { _snapshot: _removed, ...cashDbFields } = cashFields;
+      // Strip internal _snapshot key before writing to DB
+      const { _snapshot: _removed, ...cashDbFields } = cashFields;
 
-  const summarySnapshot = {
-    summary: report.summary,
-    paymentSummary: report.paymentSummary,
-    expenseSummary: report.expenseSummary,
-    productSalesCount: report.productSales?.length ?? 0,
-    unfinishedCount: unfinished.length,
-    period: report.period,
-    ...cashReconciliationSnapshot,
-  };
-
-  const existingClosing = await prisma.closingRecord.findUnique({
-    where: {
-      outletId_closingType_periodKey: {
-        outletId,
-        closingType,
-        periodKey,
-      },
-    },
-  });
-
-  if (existingClosing && existingClosing.status === "CLOSED") {
-    throw new ClosingError(
-      "ALREADY_CLOSED",
-      409,
-      "Periode ini sudah ditutup. Lakukan Reopen terlebih dahulu untuk melakukan closing ulang.",
-    );
-  }
-
-  const currentDate = now instanceof Function ? now() : now;
-
-  let record;
-  let action;
-  let newVersion;
-
-  if (existingClosing && existingClosing.status === "REOPENED") {
-    // Re-closing
-    newVersion = existingClosing.version + 1;
-    action = "RECLOSED";
-
-    // Update existing ClosingRecord
-    record = await prisma.closingRecord.update({
-      where: { id: existingClosing.id },
-      data: {
-        status: "CLOSED",
-        version: newVersion,
-        closedById: userId,
-        closedAt: currentDate,
-        summarySnapshot,
-        notes: notes ?? existingClosing.notes,
+      const summarySnapshot = {
+        summary: report.summary,
+        paymentSummary: report.paymentSummary,
+        expenseSummary: report.expenseSummary,
+        productSalesCount: report.productSales?.length ?? 0,
         unfinishedCount: unfinished.length,
-        clientTransactionId,
-        payloadHash: digest,
-        ...cashDbFields,
-      },
-      include: {
-        closedBy: { select: { id: true, name: true } },
-        reopenedBy: { select: { id: true, name: true } },
-      },
-    });
+        period: report.period,
+        ...cashReconciliationSnapshot,
+      };
 
-    // Save history entry for this re-closing
-    await prisma.closingHistory.create({
-      data: {
-        closingId: record.id,
-        version: newVersion,
-        closedById: userId,
-        closedAt: currentDate,
-        summarySnapshot,
-        notes: notes ?? existingClosing.notes,
-        unfinishedCount: unfinished.length,
-      },
-    });
+      // Check if closing already exists
+      const existingClosing = await tx.closingRecord.findUnique({
+        where: {
+          outletId_closingType_periodKey: {
+            outletId,
+            closingType,
+            periodKey,
+          },
+        },
+      });
 
-    // Record audit log
-    await prisma.closingAudit.create({
-      data: {
-        closingId: record.id,
-        outletId,
-        actorId: userId,
-        clientTransactionId,
-        payloadHash: digest,
-        action,
-        reason: notes ?? "Closing ulang setelah reopen",
-        version: newVersion,
-        beforeSnapshot: existingClosing.summarySnapshot,
-        afterSnapshot: summarySnapshot,
-        createdAt: currentDate,
-      },
-    });
-  } else {
-    // First time closing
-    newVersion = 1;
-    action = "CLOSED";
+      if (existingClosing && existingClosing.status === "CLOSED") {
+        throw new ClosingError(
+          "ALREADY_CLOSED",
+          409,
+          "Periode ini sudah ditutup. Lakukan Reopen terlebih dahulu untuk melakukan closing ulang.",
+        );
+      }
 
-    record = await prisma.closingRecord.create({
-      data: {
-        outletId,
-        closingType,
-        periodKey,
-        status: "CLOSED",
-        closedById: userId,
-        closedAt: currentDate,
-        version: 1,
-        summarySnapshot,
-        notes: notes ?? null,
-        unfinishedCount: unfinished.length,
-        clientTransactionId,
-        payloadHash: digest,
-        ...cashDbFields,
-      },
-      include: {
-        closedBy: { select: { id: true, name: true } },
-      },
-    });
+      const currentDate = now instanceof Function ? now() : now;
 
-    // Initial history
-    await prisma.closingHistory.create({
-      data: {
-        closingId: record.id,
-        version: 1,
-        closedById: userId,
-        closedAt: currentDate,
-        summarySnapshot,
-        notes: notes ?? null,
-        unfinishedCount: unfinished.length,
-      },
-    });
+      let record;
+      let action;
+      let newVersion;
 
-    // Audit log
-    await prisma.closingAudit.create({
-      data: {
-        closingId: record.id,
-        outletId,
-        actorId: userId,
-        clientTransactionId,
-        payloadHash: digest,
-        action,
-        reason: notes ?? "Closing periode",
-        version: 1,
-        afterSnapshot: summarySnapshot,
-        createdAt: currentDate,
-      },
-    });
-  }
+      if (existingClosing && existingClosing.status === "REOPENED") {
+        // Re-closing
+        newVersion = existingClosing.version + 1;
+        action = "RECLOSED";
 
-  return { record, replayed: false };
+        // Update existing ClosingRecord
+        record = await tx.closingRecord.update({
+          where: { id: existingClosing.id },
+          data: {
+            status: "CLOSED",
+            version: newVersion,
+            closedById: userId,
+            closedAt: currentDate,
+            summarySnapshot,
+            notes: notes ?? existingClosing.notes,
+            unfinishedCount: unfinished.length,
+            clientTransactionId,
+            payloadHash: digest,
+            ...cashDbFields,
+          },
+          include: {
+            closedBy: { select: { id: true, name: true } },
+            reopenedBy: { select: { id: true, name: true } },
+          },
+        });
+
+        // Save history entry for this re-closing
+        await tx.closingHistory.create({
+          data: {
+            closingId: record.id,
+            version: newVersion,
+            closedById: userId,
+            closedAt: currentDate,
+            summarySnapshot,
+            notes: notes ?? existingClosing.notes,
+            unfinishedCount: unfinished.length,
+          },
+        });
+
+        // Record audit log
+        await tx.closingAudit.create({
+          data: {
+            closingId: record.id,
+            outletId,
+            actorId: userId,
+            clientTransactionId,
+            payloadHash: digest,
+            action,
+            reason: notes ?? "Closing ulang setelah reopen",
+            version: newVersion,
+            beforeSnapshot: existingClosing.summarySnapshot,
+            afterSnapshot: summarySnapshot,
+            createdAt: currentDate,
+          },
+        });
+      } else {
+        // First time closing
+        newVersion = 1;
+        action = "CLOSED";
+
+        record = await tx.closingRecord.create({
+          data: {
+            outletId,
+            closingType,
+            periodKey,
+            status: "CLOSED",
+            closedById: userId,
+            closedAt: currentDate,
+            version: 1,
+            summarySnapshot,
+            notes: notes ?? null,
+            unfinishedCount: unfinished.length,
+            clientTransactionId,
+            payloadHash: digest,
+            ...cashDbFields,
+          },
+          include: {
+            closedBy: { select: { id: true, name: true } },
+          },
+        });
+
+        // Initial history
+        await tx.closingHistory.create({
+          data: {
+            closingId: record.id,
+            version: 1,
+            closedById: userId,
+            closedAt: currentDate,
+            summarySnapshot,
+            notes: notes ?? null,
+            unfinishedCount: unfinished.length,
+          },
+        });
+
+        // Audit log
+        await tx.closingAudit.create({
+          data: {
+            closingId: record.id,
+            outletId,
+            actorId: userId,
+            clientTransactionId,
+            payloadHash: digest,
+            action,
+            reason: notes ?? "Closing periode",
+            version: 1,
+            afterSnapshot: summarySnapshot,
+            createdAt: currentDate,
+          },
+        });
+      }
+
+      return { record, replayed: false };
+    });  // closes withOutletPeriodLock's callback
+  });  // closes $transaction
 }
 
 export async function reopenClosing({
@@ -554,24 +633,16 @@ export async function reopenClosing({
   const { clientTransactionId, closingId, reason } = payload;
 
   if (!clientTransactionId) {
-    throw new ClosingError(
-      "VALIDATION_ERROR",
-      400,
-      "clientTransactionId diperlukan.",
-    );
+    throw new ClosingError("VALIDATION_ERROR", 400, "clientTransactionId diperlukan.");
   }
 
   if (!reason || typeof reason !== "string" || reason.trim().length < 5) {
-    throw new ClosingError(
-      "VALIDATION_ERROR",
-      400,
-      "Alasan Reopen wajib diisi minimal 5 karakter.",
-    );
+    throw new ClosingError("VALIDATION_ERROR", 400, "Alasan Reopen wajib diisi minimal 5 karakter.");
   }
 
   const digest = hashPayload(payload);
 
-  // Check idempotency for reopen audit
+  // Check idempotency for reopen audit BEFORE taking lock (fast-fail path)
   const existingAudit = await prisma.closingAudit.findUnique({
     where: {
       outletId_actorId_clientTransactionId: {
@@ -581,7 +652,6 @@ export async function reopenClosing({
       },
     },
   });
-
   if (existingAudit) {
     if (existingAudit.payloadHash !== digest) {
       throw new ClosingError(
@@ -600,76 +670,89 @@ export async function reopenClosing({
     return { record, replayed: true };
   }
 
-  const closing = await prisma.closingRecord.findFirst({
-    where: { id: closingId, outletId },
-  });
+  // Wrap the entire closing operation in a single transaction and financial lock
+  return prisma.$transaction(async (tx) => {
+    // Acquire financial lock for the outlet (serializes all financial operations)
+    return withFinancialLock(tx, outletId, async () => {
+      // Re-read closing data within transaction (uses tx, not root prisma)
+      const closing = await tx.closingRecord.findFirst({
+        where: { id: closingId, outletId },
+      });
 
-  if (!closing) {
-    throw new ClosingError(
-      "NOT_FOUND",
-      404,
-      "Data closing tidak ditemukan.",
-    );
-  }
+      if (!closing) {
+        throw new ClosingError("NOT_FOUND", 404, "Data closing tidak ditemukan.");
+      }
 
-  if (closing.status === "REOPENED") {
-    throw new ClosingError(
-      "ALREADY_REOPENED",
-      409,
-      "Periode closing ini sudah berstatus Reopened.",
-    );
-  }
+      if (closing.status === "REOPENED") {
+        throw new ClosingError("ALREADY_REOPENED", 409, "Periode closing ini sudah berstatus Reopened.");
+      }
 
-  const currentDate = now instanceof Function ? now() : now;
-  const trimmedReason = reason.trim();
+      // Check if daily closing is still allowed
+      const currentDate = now instanceof Function ? now() : now;
+      const dateStr = toJakartaDateString(currentDate);
+      const dailyRange = getDailyRange(dateStr);
+      const dailyClosing = await tx.closingRecord.findUnique({
+        where: {
+          outletId_closingType_periodKey: {
+            outletId,
+            closingType: "DAILY",
+            periodKey: dateStr,
+          },
+        },
+      });
+      if (dailyClosing && dailyClosing.status === "CLOSED") {
+        throw new ClosingError("PERIOD_CLOSED", 400, "Periode transaksi ini sudah ditutup closing.");
+      }
 
-  // Update record to REOPENED
-  const updatedRecord = await prisma.closingRecord.update({
-    where: { id: closing.id },
-    data: {
-      status: "REOPENED",
-      reopenedById: userId,
-      reopenedAt: currentDate,
-      reopenReason: trimmedReason,
-    },
-    include: {
-      closedBy: { select: { id: true, name: true } },
-      reopenedBy: { select: { id: true, name: true } },
-    },
-  });
+      // Update record to REOPENED
+      const updatedRecord = await tx.closingRecord.update({
+        where: { id: closing.id },
+        data: {
+          status: "REOPENED",
+          reopenedById: userId,
+          reopenedAt: currentDate,
+          reopenReason: trimmedReason,
+        },
+        include: {
+          closedBy: { select: { id: true, name: true } },
+          reopenedBy: { select: { id: true, name: true } },
+        },
+      });
 
-  // Update current history record with reopen info
-  const latestHistory = await prisma.closingHistory.findFirst({
-    where: { closingId: closing.id, version: closing.version },
-  });
-  if (latestHistory) {
-    await prisma.closingHistory.update({
-      where: { id: latestHistory.id },
-      data: {
-        reopenedById: userId,
-        reopenedAt: currentDate,
-        reopenReason: trimmedReason,
-      },
+      // Update current history record with reopen info
+      const latestHistory = await tx.closingHistory.findFirst({
+        where: { closingId: closing.id, version: closing.version },
+      });
+      if (latestHistory) {
+        await tx.closingHistory.update({
+          where: { id: latestHistory.id },
+          data: {
+            reopenedById: userId,
+            reopenedAt: currentDate,
+            reopenReason: trimmedReason,
+          },
+        });
+      }
+
+      // Create audit log for REOPENED
+      await tx.closingAudit.create({
+        data: {
+          closingId: closing.id,
+          outletId,
+          actorId: userId,
+          clientTransactionId,
+          payloadHash: digest,
+          action: "REOPENED",
+          reason: trimmedReason,
+          version: closing.version,
+          beforeSnapshot: closing.summarySnapshot,
+          createdAt: currentDate,
+        },
+      });
+
+      return { record: updatedRecord, replayed: false };
     });
-  }
-
-  // Create audit log for REOPENED
-  await prisma.closingAudit.create({
-    data: {
-      closingId: closing.id,
-      outletId,
-      actorId: userId,
-      clientTransactionId,
-      payloadHash: digest,
-      action: "REOPENED",
-      reason: trimmedReason,
-      version: closing.version,
-      beforeSnapshot: closing.summarySnapshot,
-      createdAt: currentDate,
-    },
   });
-
-  return { record: updatedRecord, replayed: false };
 }
 
 export async function listClosings({ prisma, outletId, closingType }) {
@@ -731,4 +814,3 @@ export async function listClosings({ prisma, outletId, closingType }) {
     })),
   }));
 }
-

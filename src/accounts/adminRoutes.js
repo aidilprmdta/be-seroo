@@ -38,12 +38,10 @@ const createAccountSchema = z
 
 const accountStatusSchema = z.object({ isActive: z.boolean() }).strict();
 const passwordResetRoles = ["OWNER_MITRA", "MANAGER", "CREW"];
-const accountListQuerySchema = z
-  .object({
-    page: z.coerce.number().int().min(1).max(10000).default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(50),
-  })
-  .strict();
+const accountListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
 
 function toAccountDto(user) {
   return {
@@ -136,12 +134,23 @@ export function createAdminAccountRoutes({
 
   routes.get("/accounts", authenticate, async (c) => {
     const auth = c.get("auth");
+    console.error("DEBUG: auth.userId:", auth.userId);
+    const adminMembership = await prisma.outletMembership.findFirst({
+      where: { userId: auth.userId, role: "ADMIN_PUSAT" },
+      select: { id: true },
+    });
+    console.error("DEBUG: adminMembership:", JSON.stringify(adminMembership));
+
+    // Debug: show all memberships
+    const allMemberships = await prisma.outletMembership.findMany();
+    console.error("DEBUG: allMemberships:", JSON.stringify(allMemberships));
     await requireAdminPusat(prisma, auth.userId);
     const { page, pageSize } = parseOrThrow(
       accountListQuerySchema,
       c.req.query(),
       "Nomor halaman atau ukuran halaman tidak valid.",
     );
+    console.error("DEBUG: page:", page, "pageSize:", pageSize);
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         select: accountSelect,
@@ -151,6 +160,8 @@ export function createAdminAccountRoutes({
       }),
       prisma.user.count(),
     ]);
+    console.error("DEBUG: users:", JSON.stringify(users));
+    console.error("DEBUG: total:", total);
 
     return c.json({
       success: true,

@@ -10,7 +10,8 @@
     "db:seed": "prisma db seed",
     "db:seed:catalog": "node prisma/seed-catalog.js",
     "db:seed:dev-account": "node prisma/seed-dev-account.js",
-    "db:seed:e2e": "node prisma/seed-e2e.js"
+    "db:seed:e2e": "node prisma/seed-e2e.js",
+    "test:pg": "node scripts/run-pg-tests.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

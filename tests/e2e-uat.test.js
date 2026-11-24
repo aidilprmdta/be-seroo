@@ -125,6 +125,22 @@ function createE2eDatabase() {
           }));
       },
     },
+    outletProductAvailability: {
+      async findMany({ where, select }) {
+        const results = [];
+        if (where?.outletId === "outlet-rumbai") {
+          const data = [
+            { productId: "prod-1", outletId: "outlet-rumbai", isAvailable: true },
+          ];
+          if (select?.productId) {
+            return data.map((d) => ({ productId: d.productId }));
+          }
+          results.push(...data);
+        }
+        return results;
+      },
+    },
+
     addOn: {
       async findMany() {
         return [];
@@ -375,6 +391,10 @@ function createE2eDatabase() {
     },
     outletStockRequest: {
       async findMany() { return []; },
+    },
+    $executeRaw: () => Promise.resolve({ command: "SELECT", rowCount: 1 }),
+    $queryRaw: async function(...args) {
+      return Promise.resolve({ command: "SELECT", rowCount: 1 });
     },
     $transaction: async (cb) => cb(prisma),
   };

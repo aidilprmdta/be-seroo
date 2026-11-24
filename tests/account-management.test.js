@@ -87,6 +87,16 @@ function createDatabase() {
             membership.role === where.role,
         ) ?? null;
       },
+      async findMany({ where } = {}) {
+        if (where) {
+          return state.memberships.filter(
+            (membership) =>
+              membership.userId === where.userId &&
+              membership.role === where.role,
+          );
+        }
+        return state.memberships;
+      },
     },
     outlet: {
       async findUnique({ where }) {

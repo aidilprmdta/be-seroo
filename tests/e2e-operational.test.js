@@ -75,15 +75,20 @@ function createOperationalDatabase() {
         return state.users.find((u) => u.id === where.id || u.email === where.email) || null;
       },
       async findMany({ skip = 0, take = 50 } = {}) {
-        return state.users.slice(skip, skip + take).map((u) => {
-          const userMemberships = state.memberships
-            .filter((m) => m.userId === u.id)
-            .map((m) => {
-              const outlet = state.outlets.find((o) => o.id === m.outletId);
-              return { role: m.role, outlet };
-            });
-          return { ...u, memberships: userMemberships };
-        });
+        try {
+          return state.users.slice(skip, skip + take).map((u) => {
+            const userMemberships = state.memberships
+              .filter((m) => m.userId === u.id)
+              .map((m) => {
+                const outlet = state.outlets.find((o) => o.id === m.outletId);
+                return { role: m.role, outlet };
+              });
+            return { ...u, memberships: userMemberships };
+          });
+        } catch (error) {
+          console.error("DEBUG: user.findMany error:", error);
+          throw error;
+        }
       },
       async count() {
         return state.users.length;
@@ -122,30 +127,32 @@ function createOperationalDatabase() {
         state.memberships.push(m);
         return m;
       },
-      async findUnique({ where }) {
-        const m = state.memberships.find(
-          (x) => x.userId === where.userId_outletId.userId && x.outletId === where.userId_outletId.outletId,
-        );
-        if (!m) return null;
-        const outlet = state.outlets.find((o) => o.id === m.outletId);
-        return { ...m, outlet };
-      },
-      async findFirst({ where } = {}) {
-        const m = state.memberships.find((x) => {
-          if (where?.userId && x.userId !== where.userId) return false;
-          if (where?.role && x.role !== where.role) return false;
+
+
+      async findFirst({ where }) {
+        return state.memberships.find((m) => {
+          if (where?.userId && m.userId !== where.userId) return false;
+          if (where?.role && m.role !== where.role) return false;
           return true;
-        });
-        if (!m) return null;
-        const outlet = state.outlets.find((o) => o.id === m.outletId);
-        return { ...m, outlet };
+        }) || null;
       },
+
       async findMany({ where } = {}) {
         return state.memberships.filter((m) => {
           if (where?.userId && m.userId !== where.userId) return false;
-          if (where?.outletId && m.outletId !== where.outletId) return false;
+          if (where?.role && m.role !== where.role) return false;
           return true;
         });
+      },
+      async findUnique({ where }) {
+        const result = state.memberships.find(
+          (m) => m.userId === where.userId_outletId?.userId && m.outletId === where.userId_outletId?.outletId,
+        );
+        if (result) {
+          const outlet = state.outlets.find((o) => o.id === result.outletId);
+          return { ...result, outlet: outlet || null };
+        }
+        return null;
       },
     },
 
@@ -158,7 +165,11 @@ function createOperationalDatabase() {
           userId: user.id,
           revokedAt: null,
           expiresAt: new Date(Date.now() + 86400000),
-          user,
+          user: {
+            id: user.id,
+            isActive: true,
+            mustChangePassword: false,
+          },
         };
       },
     },
@@ -195,17 +206,27 @@ function createOperationalDatabase() {
         state.variants.push(v);
         return v;
       },
-      async findMany({ where }) {
-        return state.variants
+      async findMany({ where, include }) {
+        console.error("DEBUG productVariant.findMany called with where:", where);
+        let results = state.variants
           .filter((v) => {
             if (where?.id?.in && !where.id.in.includes(v.id)) return false;
             if (where?.isActive !== undefined && v.isActive !== where.isActive) return false;
+            const product = state.products.find((p) => p.id === v.productId);
+            if (product && where?.product?.isActive !== undefined && product.isActive !== where.product.isActive) {
+              return false;
+            }
             return true;
           })
           .map((v) => {
             const product = state.products.find((p) => p.id === v.productId);
+            if (include && include.product) {
+              return { ...v, product };
+            }
             return { ...v, product };
           });
+        console.error("DEBUG productVariant.findMany results:", results.map(r => r.id));
+        return results;
       },
     },
 
@@ -232,13 +253,18 @@ function createOperationalDatabase() {
     outletProductAvailability: {
       async upsert({ where, create, update }) {
         let av = state.availabilities.find(
-          (x) => x.outletId === where.outletId_productId.outletId && x.productId === where.outletId_productId.productId,
+          (x) => x.outletId === where.outletId_productId?.outletId && x.productId === where.outletId_productId?.productId,
         );
         if (av) {
           Object.assign(av, update);
           return av;
         }
         av = { ...create };
+        // Flatten the nested outlet and product references
+        av.outletId = create.outlet?.connect?.id || create.outlet?.connect?.id;
+        av.productId = create.product?.connect?.id || create.product?.connect?.id;
+        av.updatedById = create.updatedBy?.connect?.id || null;
+        av.isAvailable = true;
         state.availabilities.push(av);
         return av;
       },
@@ -537,7 +563,41 @@ function createOperationalDatabase() {
       },
     },
 
-    $transaction: async (fn) => (typeof fn === "function" ? fn(prisma) : Promise.all(fn)),
+    $executeRaw(sql, ...args) {
+      // Handle pg_advisory_lock/unlock
+      if (sql.toString().includes("pg_advisory_lock")) {
+        const match = sql.toString().match(/pg_advisory_lock\(((?!\d)[^)]*)\)_lock/i);
+        if (match) {
+          const keyStr = match[1].trim();
+          let key;
+          if (keyStr === "true" || keyStr === "1") {
+            key = 1n;
+          } else if (keyStr === "false" || keyStr === "0") {
+            key = 0n;
+          } else {
+            key = BigInt(keyStr);
+          }
+          // Store the lock key in state for verification
+          if (!state.advisoryLocks) state.advisoryLocks = [];
+          if (!state.advisoryLocks.includes(key)) {
+            state.advisoryLocks.push(key);
+          }
+          return Promise.resolve({ command: "SELECT", rowCount: 1 });
+        }
+      }
+      if (sql.toString().includes("pg_advisory_unlock")) {
+        // Release the lock (no-op for tests)
+        return Promise.resolve({ command: "SELECT", rowCount: 1 });
+      }
+      throw new Error(`$executeRaw not implemented: ${sql}`);
+    },
+
+    $transaction: (fn) => {
+      if (typeof fn === "function") {
+        return fn(prisma);
+      }
+      return Promise.all(fn);
+    },
 
     _dump: () => state,
   };
@@ -571,9 +631,11 @@ test("1. SEED DATA IDEMPOTENCY: Menjalankan seed 2 kali tidak membuat duplikasi"
 });
 
 test("2. AUTH & RBAC E2E: Admin Pusat, Owner Mitra, Manager, Crew memiliki hak akses terisolasi", async () => {
-  const { prisma } = createOperationalDatabase();
+  const { prisma, state } = createOperationalDatabase();
+  console.error("DEBUG test2: state.memberships before seed:", state.memberships.map(m => m.userId));
   await seedE2eData(prisma, { hashPasswordFn: async (p) => `hash-${p}` });
-
+  console.error("DEBUG test2: state.memberships after seed:", state.memberships.map(m => m.userId));
+  console.error("DEBUG test2: state.users:", state.users.map(u => u.id));
   const app = createApp({
     prisma,
     authConfig: {
@@ -591,6 +653,9 @@ test("2. AUTH & RBAC E2E: Admin Pusat, Owner Mitra, Manager, Crew memiliki hak a
   const adminRes = await app.request("/api/v1/admin/accounts", {
     headers: { Authorization: `Bearer ${adminToken}` },
   });
+  console.error("DEBUG test2: adminRes.status:", adminRes.status);
+  console.error("DEBUG test2: adminRes.statusText:", adminRes.statusText);
+  adminRes.json().then(body => console.error("DEBUG test2: adminRes.body:", body)).catch(() => console.error("DEBUG test2: adminRes.body: N/A"));
   assert.equal(adminRes.status, 200);
 
   // 2. Crew dilarang keras mengakses endpoint admin (403 Forbidden)
@@ -612,7 +677,10 @@ test("2. AUTH & RBAC E2E: Admin Pusat, Owner Mitra, Manager, Crew memiliki hak a
 
 test("3. CATALOG & AVAILABILITY E2E: Menu yang tidak aktif/tersedia di outlet ditolak saat checkout POS", async () => {
   const { prisma, state } = createOperationalDatabase();
+  console.error("DEBUG test3: availabilities before seed:", state.availabilities.length);
   await seedE2eData(prisma, { hashPasswordFn: async (p) => `hash-${p}` });
+  console.error("DEBUG test3: availabilities after seed:", state.availabilities.map(a => ({outletId: a.outletId, productId: a.productId, isAvailable: a.isAvailable})));
+  console.error("DEBUG test3: availabilities:", state.availabilities.map(a => ({outletId: a.outletId, productId: a.productId, isAvailable: a.isAvailable})));
 
   const app = createApp({
     prisma,
@@ -690,10 +758,14 @@ test("4. POS OPERASIONAL E2E: Checkout Tunai, QRIS Manual, dan Split Payment den
       "Content-Type": "application/json",
     },
     body: JSON.stringify(cashPayload),
-  });
+  })
+  .catch((err) => { console.error("Request failed:", err); throw err; });
 
   assert.equal(cashRes.status, 201);
   const cashBody = await cashRes.json();
+  if (cashRes.status !== 201) {
+    console.log("DEBUG cashRes error:", JSON.stringify(cashBody));
+  }
   assert.equal(cashBody.data.order.paymentMethod, "CASH");
   assert.equal(cashBody.data.order.paymentStatus, "LUNAS");
   // Subtotal: 2 * (10000 + 3000) = 26000
