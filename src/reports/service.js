@@ -22,6 +22,14 @@ export function getCurrentMonthInJakarta(now = new Date()) {
   }).format(now);
 }
 
+export function toJakartaMonthString(date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: JAKARTA_TZ,
+    year: "numeric",
+    month: "2-digit",
+  }).format(date);
+}
+
 export function toJakartaDateString(date) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: JAKARTA_TZ,

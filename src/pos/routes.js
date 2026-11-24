@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { createAuthenticationMiddleware } from "../auth/middleware.js";
 import { writeAuditLog } from "../audit/service.js";
-import { toJakartaDateString } from "../reports/service.js";
+import { toJakartaDateString, toJakartaMonthString } from "../reports/service.js";
 import { withFinancialLock } from "../closings/service.js";
 import { PosError } from "./errors.js";
 
@@ -419,13 +419,56 @@ async function createOrder({
 
   try {
     const order = await prisma.$transaction(async (tx) => {
-      const transactionExisting = await tx.order.findUnique({
-        where: uniqueWhere,
-        include: ORDER_INCLUDE,
-      });
-      if (transactionExisting) {
-        return existingOrderResult(transactionExisting, payloadDigest);
-      }
+      return withFinancialLock(tx, outletId, async () => {
+        const transactionExisting = await tx.order.findUnique({
+          where: uniqueWhere,
+          include: ORDER_INCLUDE,
+        });
+        if (transactionExisting) {
+          return existingOrderResult(transactionExisting, payloadDigest);
+        }
+
+        const createdAt = now();
+        const dateStr = toJakartaDateString(createdAt);
+        const monthStr = toJakartaMonthString(createdAt);
+
+        // Check Daily Closing
+        if (tx.closingRecord?.findUnique) {
+          const dailyClosing = await tx.closingRecord.findUnique({
+            where: {
+              outletId_closingType_periodKey: {
+                outletId,
+                closingType: "DAILY",
+                periodKey: dateStr,
+              },
+            },
+          });
+          if (dailyClosing && dailyClosing.status === "CLOSED") {
+            throw new PosError(
+              "PERIOD_CLOSED",
+              400,
+              "Periode harian transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membuat pesanan baru.",
+            );
+          }
+
+          // Check Monthly Closing
+          const monthlyClosing = await tx.closingRecord.findUnique({
+            where: {
+              outletId_closingType_periodKey: {
+                outletId,
+                closingType: "MONTHLY",
+                periodKey: monthStr,
+              },
+            },
+          });
+          if (monthlyClosing && monthlyClosing.status === "CLOSED") {
+            throw new PosError(
+              "PERIOD_CLOSED",
+              400,
+              "Periode bulanan transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membuat pesanan baru.",
+            );
+          }
+        }
 
       const variantIds = [...new Set(payload.items.map((item) => item.productVariantId))];
       const variantsResult = await tx.productVariant.findMany({
@@ -600,7 +643,6 @@ async function createOrder({
         ? "PENDING_RECONCILIATION"
         : "LUNAS";
 
-      const createdAt = now();
       const order = await tx.order.create({
         data: {
           outletId,
@@ -641,6 +683,7 @@ async function createOrder({
             // Tidak ada pengurangan stok otomatis karena MVP
       // tidak menggunakan sistem resep.
       return order;
+      }); // closes withFinancialLock
     });
 
     return { order, replayed: false };
@@ -883,7 +926,8 @@ export function createPosRoutes({
 
         // Check if period is closed (financial lock ensures serialization)
         const dateStr = toJakartaDateString(updatedOrder.createdAt);
-        const closing = await tx.closingRecord.findUnique({
+        const monthStr = toJakartaMonthString(updatedOrder.createdAt);
+        const dailyClosing = await tx.closingRecord.findUnique({
           where: {
             outletId_closingType_periodKey: {
               outletId,
@@ -892,11 +936,28 @@ export function createPosRoutes({
             },
           },
         });
-        if (closing && closing.status === "CLOSED") {
+        if (dailyClosing && dailyClosing.status === "CLOSED") {
           throw new PosError(
             "PERIOD_CLOSED",
             400,
-            "Periode transaksi ini sudah ditutup closing.",
+            "Periode harian transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk memverifikasi QRIS.",
+          );
+        }
+
+        const monthlyClosing = await tx.closingRecord.findUnique({
+          where: {
+            outletId_closingType_periodKey: {
+              outletId,
+              closingType: "MONTHLY",
+              periodKey: monthStr,
+            },
+          },
+        });
+        if (monthlyClosing && monthlyClosing.status === "CLOSED") {
+          throw new PosError(
+            "PERIOD_CLOSED",
+            400,
+            "Periode bulanan transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk memverifikasi QRIS.",
           );
         }
 
@@ -1107,7 +1168,8 @@ export function createPosRoutes({
       return withFinancialLock(tx, outletId, async () => {
         // Check if period is closed (financial lock ensures serialization)
         const dateStr = toJakartaDateString(order.createdAt);
-        const closing = await tx.closingRecord.findUnique({
+        const monthStr = toJakartaMonthString(order.createdAt);
+        const dailyClosing = await tx.closingRecord.findUnique({
           where: {
             outletId_closingType_periodKey: {
               outletId,
@@ -1116,11 +1178,28 @@ export function createPosRoutes({
             },
           },
         });
-        if (closing && closing.status === "CLOSED") {
+        if (dailyClosing && dailyClosing.status === "CLOSED") {
           throw new PosError(
             "PERIOD_CLOSED",
             400,
-            "Periode transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membatalkan transaksi.",
+            "Periode harian transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membatalkan transaksi.",
+          );
+        }
+
+        const monthlyClosing = await tx.closingRecord.findUnique({
+          where: {
+            outletId_closingType_periodKey: {
+              outletId,
+              closingType: "MONTHLY",
+              periodKey: monthStr,
+            },
+          },
+        });
+        if (monthlyClosing && monthlyClosing.status === "CLOSED") {
+          throw new PosError(
+            "PERIOD_CLOSED",
+            400,
+            "Periode bulanan transaksi ini sudah ditutup closing. Reopen closing terlebih dahulu untuk membatalkan transaksi.",
           );
         }
 

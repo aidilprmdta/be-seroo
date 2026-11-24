@@ -68,8 +68,10 @@ export async function withAdvisoryLock(tx, lockKey, callback) {
 export async function withFinancialLock(tx, outletId, callback) {
   console.log('[DEBUG] withFinancialLock acquired for outlet:', outletId);
   try {
-    // Transaction-level advisory lock: auto-released on commit/rollback
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${financialLockKey(outletId)})`;
+    if (typeof tx?.$queryRaw === "function") {
+      // Transaction-level advisory lock: auto-released on commit/rollback
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${financialLockKey(outletId)})`;
+    }
   } catch (err) {
     console.error('[DEBUG] withFinancialLock lock failed:', err);
     throw err;

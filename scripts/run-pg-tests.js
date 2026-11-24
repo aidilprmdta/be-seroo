@@ -5,6 +5,7 @@
 // (Nama berkas sengaja tidak cocok dengan pola penemuan otomatis `node --test`, jadi `npm test`
 // tidak pernah menjalankannya.)
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertPgRunSucceeded,
