@@ -282,7 +282,7 @@ export function createApp({
 
     logger.error(
       "Request failed",
-      error instanceof Error ? error.name : "UnknownError",
+      error instanceof Error ? error.stack || error.name : "UnknownError",
     );
 
     return c.json(

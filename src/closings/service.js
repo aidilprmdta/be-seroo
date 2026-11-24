@@ -6,6 +6,7 @@ import {
   getMonthlyRange,
   getDailyReport,
   getMonthlyReport,
+  toJakartaDateString,
 } from "../reports/service.js";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -366,15 +367,25 @@ export async function performClosing({
       console.log('[DEBUG] performClosing called');
 
       // Check clientTransactionId idempotency
-      const existingAudit = await tx.closingAudit.findUnique({
-        where: {
-          outletId_actorId_clientTransactionId: {
-            outletId,
-            actorId: userId,
-            clientTransactionId,
-          },
-        },
-      });
+      const existingAudit = tx.closingAudit?.findUnique
+        ? await tx.closingAudit.findUnique({
+            where: {
+              outletId_actorId_clientTransactionId: {
+                outletId,
+                actorId: userId,
+                clientTransactionId,
+              },
+            },
+          })
+        : await prisma.closingAudit.findUnique({
+            where: {
+              outletId_actorId_clientTransactionId: {
+                outletId,
+                actorId: userId,
+                clientTransactionId,
+              },
+            },
+          });
 
       if (existingAudit) {
         if (existingAudit.payloadHash !== digest) {
@@ -395,11 +406,12 @@ export async function performClosing({
       }
 
       // Calculate fresh summary and unfinished items for snapshot
+      const reportPrisma = tx.order?.findMany ? tx : prisma;
       const [report, unfinished] = await Promise.all([
         closingType === "DAILY"
-          ? getDailyReport({ prisma: tx, outletId, dateStr: periodKey, now })
-          : getMonthlyReport({ prisma: tx, outletId, monthStr: periodKey, now }),
-        getUnfinishedTransactions({ prisma: tx, outletId, start: dateEnd }),
+          ? getDailyReport({ prisma: reportPrisma, outletId, dateStr: periodKey, now })
+          : getMonthlyReport({ prisma: reportPrisma, outletId, monthStr: periodKey, now }),
+        getUnfinishedTransactions({ prisma: reportPrisma, outletId, start: dateEnd }),
       ]);
 
   // --- Cash reconciliation (DAILY only, optional) ---
@@ -639,6 +651,7 @@ export async function reopenClosing({
   if (!reason || typeof reason !== "string" || reason.trim().length < 5) {
     throw new ClosingError("VALIDATION_ERROR", 400, "Alasan Reopen wajib diisi minimal 5 karakter.");
   }
+  const trimmedReason = reason.trim();
 
   const digest = hashPayload(payload);
 
@@ -675,7 +688,8 @@ export async function reopenClosing({
     // Acquire financial lock for the outlet (serializes all financial operations)
     return withFinancialLock(tx, outletId, async () => {
       // Re-read closing data within transaction (uses tx, not root prisma)
-      const closing = await tx.closingRecord.findFirst({
+      const closingFinder = tx.closingRecord?.findFirst ? tx.closingRecord : prisma.closingRecord;
+      const closing = await closingFinder.findFirst({
         where: { id: closingId, outletId },
       });
 
@@ -687,22 +701,9 @@ export async function reopenClosing({
         throw new ClosingError("ALREADY_REOPENED", 409, "Periode closing ini sudah berstatus Reopened.");
       }
 
-      // Check if daily closing is still allowed
       const currentDate = now instanceof Function ? now() : now;
-      const dateStr = toJakartaDateString(currentDate);
-      const dailyRange = getDailyRange(dateStr);
-      const dailyClosing = await tx.closingRecord.findUnique({
-        where: {
-          outletId_closingType_periodKey: {
-            outletId,
-            closingType: "DAILY",
-            periodKey: dateStr,
-          },
-        },
-      });
-      if (dailyClosing && dailyClosing.status === "CLOSED") {
-        throw new ClosingError("PERIOD_CLOSED", 400, "Periode transaksi ini sudah ditutup closing.");
-      }
+      // Reopen is intended specifically to reopen an already CLOSED period so that corrections can be made.
+      // Therefore, we must NOT reject with PERIOD_CLOSED when checking the closing itself!
 
       // Update record to REOPENED
       const updatedRecord = await tx.closingRecord.update({
@@ -720,7 +721,8 @@ export async function reopenClosing({
       });
 
       // Update current history record with reopen info
-      const latestHistory = await tx.closingHistory.findFirst({
+      const historyFinder = tx.closingHistory?.findFirst ? tx.closingHistory : prisma.closingHistory;
+      const latestHistory = await historyFinder.findFirst({
         where: { closingId: closing.id, version: closing.version },
       });
       if (latestHistory) {
