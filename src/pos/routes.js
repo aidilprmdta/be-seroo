@@ -147,7 +147,7 @@ const paymentLineSchema = z
 
 const orderSchema = z
   .object({
-    clientTransactionId: z.string().uuid(),
+    clientTransactionId: z.string().uuid().optional(),
     recordedOffline: z.boolean().default(false),
     paymentMethod: z.enum(["CASH", "QRIS", "SPLIT"]).optional(),
     payments: z.array(paymentLineSchema).min(1).max(10).optional(),
@@ -162,6 +162,20 @@ const orderSchema = z
       });
     }
   });
+
+// ShopeeFood orders: order POS biasa + platformOrderId sebagai idempotency key
+// dan penanda sumber di tabel ShopeeFoodOrder.
+const shopeeOrderSchema = z
+  .object({
+    // platformOrderId dipakai sebagai clientTransactionId, jadi bukan UUID.
+    clientTransactionId: z.string().min(1).max(128).optional(),
+    recordedOffline: z.boolean().default(false),
+    paymentMethod: z.enum(["CASH", "QRIS", "SPLIT"]).optional(),
+    payments: z.array(paymentLineSchema).min(1).max(10).optional(),
+    items: z.array(orderItemSchema).min(1).max(50),
+    platformOrderId: z.string().min(1).max(128),
+  })
+  .strict();
 
 function readBody(value) {
   const parsed = orderSchema.safeParse(value);
@@ -398,20 +412,15 @@ async function createOrder({
   now,
   orderNumberFactory,
 }) {
-  console.error("DEBUG createOrder: called with outletId:", outletId, "crewId:", crewId, "payload keys:", Object.keys(payload || {}));
   const payloadDigest = hashPayload(payload);
   const uniqueWhere = idempotencyWhere({
     outletId,
     crewId,
     clientTransactionId: payload.clientTransactionId,
   });
-  console.error("DEBUG createOrder: uniqueWhere:", JSON.stringify(uniqueWhere));
   const existing = await prisma.order.findUnique({
     where: uniqueWhere,
     include: ORDER_INCLUDE,
-  }).catch((err) => {
-    console.error("DEBUG findUnique error:", err);
-    throw err;
   });
   if (existing) {
     return { order: existingOrderResult(existing, payloadDigest), replayed: true };
@@ -680,6 +689,30 @@ async function createOrder({
         });
       }
 
+      // Penanda sumber pesanan: order tetap order POS biasa, baris ini hanya
+      // menautkan platformOrderId agar rekap per channel bisa dipisahkan.
+      if (payload.platformOrderId && tx.shopeeFoodOrder?.create) {
+        await tx.shopeeFoodOrder.create({
+          data: {
+            outletId,
+            orderId: order.id,
+            platformOrderId: payload.platformOrderId,
+            totalAmount: total,
+            paymentMethod: primaryPaymentMethod,
+            paymentStatus: overallPaymentStatus,
+            items: JSON.stringify(
+              items.map((item) => ({
+                productName: item.productName,
+                variantName: item.variantName,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice.toString(),
+              })),
+            ),
+            createdAt,
+          },
+        });
+      }
+
             // Tidak ada pengurangan stok otomatis karena MVP
       // tidak menggunakan sistem resep.
       return order;
@@ -786,12 +819,22 @@ export function createPosRoutes({
     const outletId = c.req.param("outletId");
     assertOutletId(outletId);
     const auth = c.get("auth");
-    console.error("DEBUG route: requireCrewMembership for", auth.userId, outletId);
     await requireCrewMembership(prisma, auth.userId, outletId);
-    console.error("DEBUG route: requireCrewMembership ok");
 
-    const payload = readBody(await readJson(c));
-    console.error("DEBUG route: creating order for outlet", outletId, "payload keys:", Object.keys(payload || {}));
+    let payload;
+    try {
+      const raw = await c.req.json();
+      if (raw.platformOrderId) {
+        // ShopeeFood: order POS biasa + platformOrderId sebagai idempotency key
+        payload = shopeeOrderSchema.parse({ ...raw, clientTransactionId: raw.platformOrderId });
+      } else {
+        payload = orderSchema.parse(raw);
+      }
+    } catch (err) {
+      if (err instanceof z.ZodError) throw new PosError("VALIDATION_ERROR", 400, err.issues[0].message);
+      throw err;
+    }
+
     let result;
     try {
       result = await createOrder({
@@ -803,7 +846,6 @@ export function createPosRoutes({
         orderNumberFactory,
       });
     } catch (error) {
-      console.error("DEBUG createOrder error:", error.message);
       throw error;
     }
 

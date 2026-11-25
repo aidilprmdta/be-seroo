@@ -11,16 +11,17 @@ const corsOrigins =
   env.CORS_ORIGINS.length > 0
     ? env.CORS_ORIGINS
     : env.NODE_ENV === "development"
-      ? [
-          "http://localhost:8081",
-          "http://localhost:8082",
-          "http://localhost:19006",
-          "http://localhost:3000",
-          "http://127.0.0.1:8081",
-          "http://127.0.0.1:8082",
-          "http://127.0.0.1:19006",
-          "http://127.0.0.1:3000",
-        ]
+      ? (origin) => {
+          if (!origin) return "*";
+          if (
+            /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(
+              origin
+            )
+          ) {
+            return origin;
+          }
+          return undefined;
+        }
       : [];
 const app = createApp({
   prisma,

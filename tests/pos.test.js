@@ -11,6 +11,7 @@ const CLIENT_TRANSACTION_ID = "e75f8268-4ed1-4f5c-b853-b4c25178a107";
 function createPosDatabase(role = "CREW") {
   const state = {
     orders: [],
+    shopeeFoodOrders: [],
     nextOrderId: 1,
   };
   const products = [
@@ -170,6 +171,12 @@ function createPosDatabase(role = "CREW") {
         };
         state.orders.push(order);
         return order;
+      },
+    },
+    shopeeFoodOrder: {
+      async create({ data }) {
+        state.shopeeFoodOrders.push(data);
+        return { id: `shopee-${state.nextOrderId++}`, ...data };
       },
     },
     async $transaction(callback) {
@@ -399,4 +406,81 @@ test("order payload rejects client-supplied totals or role fields", async () => 
 
   assert.equal(response.status, 400);
   assert.equal(body.error.code, "VALIDATION_ERROR");
+});
+
+test("shopeeFood order creates a regular POS order plus source marker row", async () => {
+  const { app, accessToken, state } = createFixture();
+  const response = await postOrder(app, accessToken, "outlet-a", {
+    platformOrderId: "LM00012345",
+    recordedOffline: false,
+    paymentMethod: "CASH",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.data.order.status, "COMPLETED");
+  assert.equal(body.data.order.total, "12000");
+
+  assert.equal(state.shopeeFoodOrders.length, 1);
+  const marker = state.shopeeFoodOrders[0];
+  assert.equal(marker.platformOrderId, "LM00012345");
+  assert.equal(marker.orderId, body.data.order.id);
+  assert.equal(marker.totalAmount.toString(), "12000");
+  assert.equal(marker.paymentMethod, "CASH");
+  assert.ok(marker.items.includes("Minuman Uji"));
+});
+
+test("shopeeFood order replay is idempotent without duplicate marker", async () => {
+  const { app, accessToken, state } = createFixture();
+  const payload = {
+    platformOrderId: "LM00012345",
+    recordedOffline: false,
+    paymentMethod: "CASH",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  };
+
+  const first = await postOrder(app, accessToken, "outlet-a", payload);
+  const second = await postOrder(app, accessToken, "outlet-a", payload);
+
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 200);
+  assert.equal(state.orders.length, 1);
+  assert.equal(state.shopeeFoodOrders.length, 1);
+});
+
+test("shopeeFood order with unknown variant is rejected like a normal order", async () => {
+  const { app, accessToken, state } = createFixture();
+  const response = await postOrder(app, accessToken, "outlet-a", {
+    platformOrderId: "LM999",
+    recordedOffline: false,
+    paymentMethod: "CASH",
+    items: [
+      {
+        productVariantId: "variant-halus",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "CATALOG_ITEM_UNAVAILABLE");
+  assert.equal(state.shopeeFoodOrders.length, 0);
 });
