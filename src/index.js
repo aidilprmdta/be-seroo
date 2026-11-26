@@ -7,18 +7,34 @@ import { parseEnv } from "./config/env.js";
 import prisma from "./lib/prisma.js";
 
 const env = parseEnv(process.env);
+const corsOrigins =
+  env.CORS_ORIGINS.length > 0
+    ? env.CORS_ORIGINS
+    : env.NODE_ENV === "development"
+      ? (origin) => {
+          if (!origin) return "*";
+          if (
+            /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(
+              origin
+            )
+          ) {
+            return origin;
+          }
+          return undefined;
+        }
+      : [];
 const app = createApp({
   prisma,
   authConfig: {
     accessTokenSecret: env.JWT_ACCESS_SECRET,
   },
-  corsOrigins: env.CORS_ORIGINS,
+  corsOrigins,
 });
 
 const server = serve({
   fetch: app.fetch,
   port: env.PORT,
-  ...(env.NODE_ENV === "development" ? { hostname: "0.0.0.0" } : {}),
+  hostname: "0.0.0.0",
 });
 
 console.info(`Seroo API listening on port ${env.PORT}`);

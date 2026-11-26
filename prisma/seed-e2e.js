@@ -78,27 +78,30 @@ export const TEST_OUTLETS = [
 export const TEST_PRODUCTS = [
   {
     id: "prod-teh-tarik",
+    isActive: true,
     name: "Teh Tarik Seroo",
     description: "Teh tarik khas Seroo dengan racikan susu kental manis.",
     category: "Teh Tarik",
     variants: [
-      { id: "var-teh-regular", name: "Regular", price: "10000.00" },
-      { id: "var-teh-large", name: "Large", price: "12000.00" },
-      { id: "var-teh-special", name: "Special", price: "15000.00" },
+      { id: "var-teh-regular", name: "Regular", price: "10000.00", isActive: true, productId: "prod-teh-tarik" },
+      { id: "var-teh-large", name: "Large", price: "12000.00", isActive: true, productId: "prod-teh-tarik" },
+      { id: "var-teh-special", name: "Special", price: "15000.00", isActive: true, productId: "prod-teh-tarik" },
     ],
   },
   {
     id: "prod-kopi-tarik",
+    isActive: true,
     name: "Kopi Tarik Seroo",
     description: "Kopi robusta tarik khas Nusantara.",
     category: "Kopi",
     variants: [
-      { id: "var-kopi-regular", name: "Regular", price: "12000.00" },
-      { id: "var-kopi-large", name: "Large", price: "14000.00" },
+      { id: "var-kopi-regular", name: "Regular", price: "12000.00", isActive: true, productId: "prod-kopi-tarik" },
+      { id: "var-kopi-large", name: "Large", price: "14000.00", isActive: true, productId: "prod-kopi-tarik" },
     ],
   },
   {
     id: "prod-milo-tarik",
+    isActive: true,
     name: "Milo Tarik",
     description: "Cokelat malt khas dengan buih melimpah.",
     category: "Cokelat",
@@ -112,18 +115,19 @@ export const TEST_PRODUCTS = [
     name: "Teh Putih Original",
     description: "Teh putih melati segar (Khusus gerai tertentu).",
     category: "Teh",
+    isActive: false,
     variants: [
-      { id: "var-teh-putih-panas", name: "Panas", price: "10000.00" },
-      { id: "var-teh-putih-dingin", name: "Dingin", price: "10000.00" },
+      { id: "var-teh-putih-panas", name: "Panas", price: "10000.00", isActive: false, productId: "prod-teh-putih" },
+      { id: "var-teh-putih-dingin", name: "Dingin", price: "10000.00", isActive: false, productId: "prod-teh-putih" },
     ],
   },
 ];
 
 export const TEST_ADD_ONS = [
-  { id: "addon-extra-susu", name: "Extra Susu", price: "3000.00" },
-  { id: "addon-extra-teh", name: "Extra Teh", price: "2000.00" },
-  { id: "addon-cincau", name: "Topping Cincau", price: "2500.00" },
-  { id: "addon-boba", name: "Boba Brown Sugar", price: "3500.00" },
+  { id: "addon-extra-susu", name: "Extra Susu", price: "3000.00", isActive: true },
+  { id: "addon-extra-teh", name: "Extra Teh", price: "2000.00", isActive: true },
+  { id: "addon-cincau", name: "Topping Cincau", price: "2500.00", isActive: true },
+  { id: "addon-boba", name: "Boba Brown Sugar", price: "3500.00", isActive: true },
 ];
 
 export const TEST_INVENTORY = [
@@ -459,8 +463,9 @@ export async function seedE2eData(prisma, { hashPasswordFn = hashPassword } = {}
           },
         },
         create: {
-          outletId: "outlet-rumbai",
-          productId: prodId,
+          outlet: { connect: { id: "outlet-rumbai" } },
+          product: { connect: { id: prodId } },
+          updatedBy: { connect: { id: "user-admin-pusat" } },
           isAvailable: true,
         },
         update: {

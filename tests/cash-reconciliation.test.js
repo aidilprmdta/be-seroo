@@ -247,6 +247,10 @@ function createDb(role = "MANAGER") {
         return a;
       },
     },
+    // Add $queryRaw for advisory lock support
+    $queryRaw: async function(...args) {
+      return Promise.resolve({ command: "SELECT", rowCount: 1 });
+    },
     $transaction: async (cb) => cb(prisma),
     _state: state,
   };

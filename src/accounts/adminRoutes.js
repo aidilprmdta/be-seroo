@@ -38,12 +38,10 @@ const createAccountSchema = z
 
 const accountStatusSchema = z.object({ isActive: z.boolean() }).strict();
 const passwordResetRoles = ["OWNER_MITRA", "MANAGER", "CREW"];
-const accountListQuerySchema = z
-  .object({
-    page: z.coerce.number().int().min(1).max(10000).default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(50),
-  })
-  .strict();
+const accountListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
 
 function toAccountDto(user) {
   return {
@@ -93,7 +91,15 @@ function assertPasswordResetTarget(account) {
 
 async function readJson(c) {
   try {
-    return await c.req.json();
+    const raw = await c.req.json();
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new AdminAccountError(

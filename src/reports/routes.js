@@ -8,7 +8,7 @@ import {
   getTodayInJakarta,
   getCurrentMonthInJakarta,
 } from "./service.js";
-import { generateReportCsv, generateReportHtml } from "./export.js";
+import { generateReportCsv, generateReportHtml, generateReportPdf, generateReportXlsx } from "./export.js";
 
 function assertOutletId(outletId) {
   if (!outletId || outletId.length > 64) {
@@ -216,6 +216,85 @@ export function createReportRoutes({
       status: 200,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
+      },
+    });
+  });
+
+  // Export PDF / XLSX (SRS KF-15). Tanpa dependency: PDF generator minimal,
+  // XLSX memakai SpreadsheetML 2003 yang dibuka Excel sebagai .xls.
+  routes.get("/:outletId/reports/export/:format", authenticate, async (c) => {
+    const outletId = c.req.param("outletId");
+    const format = (c.req.param("format") || "").toUpperCase();
+    if (!["PDF", "XLSX", "XLS"].includes(format)) {
+      throw new ReportError("VALIDATION_ERROR", 400, "Format ekspor tidak didukung (PDF atau XLSX).");
+    }
+    assertOutletId(outletId);
+    const auth = c.get("auth");
+    await requireMembership(prisma, auth.userId, outletId, [
+      "MANAGER",
+      "OWNER",
+      "OWNER_MITRA",
+      "ADMIN_PUSAT",
+    ]);
+
+    const type = c.req.query("type") || "DAILY";
+    const periodKey =
+      c.req.query("periodKey") ||
+      (type === "DAILY" ? c.req.query("date") : c.req.query("month"));
+
+    const [outlet, report, closing] = await Promise.all([
+      prisma.outlet.findUnique({ where: { id: outletId } }),
+      type === "DAILY"
+        ? getDailyReport({ prisma, outletId, dateStr: periodKey, now: now() })
+        : getMonthlyReport({ prisma, outletId, monthStr: periodKey, now: now() }),
+      prisma.closingRecord.findUnique({
+        where: {
+          outletId_closingType_periodKey: {
+            outletId,
+            closingType: type,
+            periodKey:
+              periodKey ||
+              (type === "DAILY"
+                ? getTodayInJakarta(now())
+                : getCurrentMonthInJakarta(now())),
+          },
+        },
+        include: { closedBy: { select: { id: true, name: true } } },
+      }),
+    ]);
+
+    const periodLabel = report.period.date || report.period.month;
+    const baseName = `laporan-${outlet?.code || outletId}-${report.period.type.toLowerCase()}-${periodLabel}`;
+    const input = { report, outlet, closingRecord: closing };
+
+    await writeAuditLog(prisma, {
+      actorUserId: auth.userId,
+      sessionId: auth.sessionId,
+      outletId,
+      action: "REPORT_EXPORTED",
+      resourceType: "Report",
+      metadata: {
+        format,
+        reportType: report.period.type,
+        periodKey: periodLabel,
+      },
+    });
+
+    if (format === "PDF") {
+      return new Response(generateReportPdf(input), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${baseName}.pdf"`,
+        },
+      });
+    }
+
+    return new Response(generateReportXlsx(input), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${baseName}.xls"`,
       },
     });
   });

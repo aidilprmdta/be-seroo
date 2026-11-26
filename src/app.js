@@ -28,6 +28,11 @@ import { OutletAvailabilityError } from "./catalog/availabilityErrors.js";
 import { createCatalogAvailabilityRoutes } from "./catalog/availabilityRoutes.js";
 import { LossReportError } from "./loss-reports/errors.js";
 import { createLossReportRoutes } from "./loss-reports/routes.js";
+import { createShopeeFoodRoutes } from "./shopee-food/routes.js";
+import { createShiftHandoverRoutes } from "./shift-handover/routes.js";
+import { createReceiptRoutes } from "./receipt/routes.js";
+import { NotificationError } from "./notifications/errors.js";
+import { createNotificationRoutes } from "./notifications/routes.js";
 
 export function createApp({
   prisma,
@@ -69,9 +74,11 @@ export function createApp({
     });
   });
 
-  if (corsOrigins.length > 0) {
+  if (corsOrigins.length > 0 || typeof corsOrigins === "function") {
     app.use("*", cors({
-      origin: (origin) => corsOrigins.includes(origin) ? origin : undefined,
+      origin: typeof corsOrigins === "function"
+        ? corsOrigins
+        : (origin) => (corsOrigins.includes(origin) ? origin : undefined),
       allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
       exposeHeaders: ["X-Request-ID"],
     }));
@@ -235,6 +242,34 @@ export function createApp({
         ...lossReportOptions,
       }),
     );
+    app.route(
+      "/api/v1/outlets",
+      createShopeeFoodRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+      }),
+    );
+    app.route(
+      "/api/v1/outlets",
+      createShiftHandoverRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+      }),
+    );
+    app.route(
+      "/api/v1/outlets",
+      createReceiptRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+      }),
+    );
+    app.route(
+      "/api/v1/outlets",
+      createNotificationRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+      }),
+    );
   } // Tutup if (authConfig)
 
   app.notFound((c) =>
@@ -265,7 +300,8 @@ export function createApp({
       error instanceof AdminAccountError ||
       error instanceof AuditError ||
       error instanceof OutletAvailabilityError ||
-      error instanceof LossReportError
+      error instanceof LossReportError ||
+      error instanceof NotificationError
     ) {
       return c.json(
         {
@@ -282,7 +318,7 @@ export function createApp({
 
     logger.error(
       "Request failed",
-      error instanceof Error ? error.name : "UnknownError",
+      error instanceof Error ? error.stack || error.name : "UnknownError",
     );
 
     return c.json(

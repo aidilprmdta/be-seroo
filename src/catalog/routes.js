@@ -30,7 +30,15 @@ async function requireAdminPusat(prisma, userId) {
 
 async function readJson(c) {
   try {
-    return await c.req.json();
+    const raw = await c.req.json();
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new CatalogAdminError("VALIDATION_ERROR", 400, "Format permintaan JSON tidak valid.");

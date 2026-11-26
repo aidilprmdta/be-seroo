@@ -4,7 +4,51 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { createAuthenticationMiddleware } from "../auth/middleware.js";
 import { writeAuditLog } from "../audit/service.js";
+import { withFinancialLock } from "../closings/service.js";
+import { toJakartaDateString, toJakartaMonthString } from "../reports/service.js";
 import { ExpenseError } from "./errors.js";
+
+async function assertExpensePeriodOpen(tx, outletId, date) {
+  if (!tx.closingRecord?.findUnique) return;
+  const dateStr = toJakartaDateString(date);
+  const monthStr = toJakartaMonthString(date);
+
+  // Check Daily Closing
+  const dailyClosing = await tx.closingRecord.findUnique({
+    where: {
+      outletId_closingType_periodKey: {
+        outletId,
+        closingType: "DAILY",
+        periodKey: dateStr,
+      },
+    },
+  });
+  if (dailyClosing && dailyClosing.status === "CLOSED") {
+    throw new ExpenseError(
+      "PERIOD_CLOSED",
+      400,
+      "Periode harian pengeluaran ini sudah ditutup closing. Reopen closing terlebih dahulu untuk melakukan perubahan.",
+    );
+  }
+
+  // Check Monthly Closing
+  const monthlyClosing = await tx.closingRecord.findUnique({
+    where: {
+      outletId_closingType_periodKey: {
+        outletId,
+        closingType: "MONTHLY",
+        periodKey: monthStr,
+      },
+    },
+  });
+  if (monthlyClosing && monthlyClosing.status === "CLOSED") {
+    throw new ExpenseError(
+      "PERIOD_CLOSED",
+      400,
+      "Periode bulanan pengeluaran ini sudah ditutup closing. Reopen closing terlebih dahulu untuk melakukan perubahan.",
+    );
+  }
+}
 
 const moneyString = z
   .string()
@@ -259,39 +303,45 @@ async function createExpense({ prisma, outletId, userId, payload, now }) {
 
   try {
     const expense = await prisma.$transaction(async (tx) => {
-      const current = await tx.expense.findUnique({
-        where: uniqueWhere,
-        include: expenseInclude,
-      });
-      if (current) {
-        assertSamePayload(current, digest);
-        return current;
-      }
-      const category = await tx.expenseCategory.findUnique({
-        where: { id: payload.categoryId },
-        select: { id: true },
-      });
-      if (!category) {
-        throw new ExpenseError(
-          "CATEGORY_UNAVAILABLE",
-          400,
-          "Kategori pengeluaran tidak tersedia.",
-        );
-      }
-      return tx.expense.create({
-        data: {
-          outletId,
-          createdById: userId,
-          clientTransactionId: payload.clientTransactionId,
-          payloadHash: digest,
-          categoryId: payload.categoryId,
-          amount: new Prisma.Decimal(payload.amount),
-          expenseDate: new Date(payload.expenseDate),
-          description: payload.description ?? null,
-          createdAt: now(),
-          updatedAt: now(),
-        },
-        include: expenseInclude,
+      return withFinancialLock(tx, outletId, async () => {
+        const current = await tx.expense.findUnique({
+          where: uniqueWhere,
+          include: expenseInclude,
+        });
+        if (current) {
+          assertSamePayload(current, digest);
+          return current;
+        }
+
+        const expenseDateObj = new Date(payload.expenseDate);
+        await assertExpensePeriodOpen(tx, outletId, expenseDateObj);
+
+        const category = await tx.expenseCategory.findUnique({
+          where: { id: payload.categoryId },
+          select: { id: true },
+        });
+        if (!category) {
+          throw new ExpenseError(
+            "CATEGORY_UNAVAILABLE",
+            400,
+            "Kategori pengeluaran tidak tersedia.",
+          );
+        }
+        return tx.expense.create({
+          data: {
+            outletId,
+            createdById: userId,
+            clientTransactionId: payload.clientTransactionId,
+            payloadHash: digest,
+            categoryId: payload.categoryId,
+            amount: new Prisma.Decimal(payload.amount),
+            expenseDate: expenseDateObj,
+            description: payload.description ?? null,
+            createdAt: now(),
+            updatedAt: now(),
+          },
+          include: expenseInclude,
+        });
       });
     });
     return { expense, replayed: false };
@@ -327,96 +377,105 @@ async function correctExpense({
 
   try {
     const expense = await prisma.$transaction(async (tx) => {
-      const current = await tx.expense.findFirst({
-        where: { id: expenseId, outletId },
-        include: { category: { select: { name: true } } },
-      });
-      if (!current) {
-        throw new ExpenseError("NOT_FOUND", 404, "Pengeluaran tidak ditemukan.");
-      }
-      if (current.status !== "ACTIVE") {
-        throw new ExpenseError(
-          "EXPENSE_NOT_ACTIVE",
-          409,
-          "Pengeluaran yang dibatalkan tidak dapat dikoreksi.",
-        );
-      }
-      if (payload.categoryId) {
-        const category = await tx.expenseCategory.findUnique({
-          where: { id: payload.categoryId },
-          select: { id: true },
+      return withFinancialLock(tx, outletId, async () => {
+        const current = await tx.expense.findFirst({
+          where: { id: expenseId, outletId },
+          include: { category: { select: { name: true } } },
         });
-        if (!category) {
+        if (!current) {
+          throw new ExpenseError("NOT_FOUND", 404, "Pengeluaran tidak ditemukan.");
+        }
+        if (current.status !== "ACTIVE") {
           throw new ExpenseError(
-            "CATEGORY_UNAVAILABLE",
-            400,
-            "Kategori pengeluaran tidak tersedia.",
+            "EXPENSE_NOT_ACTIVE",
+            409,
+            "Pengeluaran yang dibatalkan tidak dapat dikoreksi.",
           );
         }
-      }
 
-      const before = expenseSnapshot(current);
-      const updatedAt = now();
-      const updateData = {
-        ...(payload.categoryId !== undefined
-          ? { categoryId: payload.categoryId }
-          : {}),
-        ...(payload.amount !== undefined
-          ? { amount: new Prisma.Decimal(payload.amount) }
-          : {}),
-        ...(payload.expenseDate !== undefined
-          ? { expenseDate: new Date(payload.expenseDate) }
-          : {}),
-        ...(payload.description !== undefined
-          ? { description: payload.description }
-          : {}),
-        updatedAt,
-      };
-      const changed = await tx.expense.updateMany({
-        where: {
-          id: expenseId,
-          outletId,
-          status: "ACTIVE",
-          updatedAt: current.updatedAt,
-        },
-        data: updateData,
-      });
-      if (changed.count !== 1) {
-        throw new ExpenseError(
-          "EXPENSE_CHANGED",
-          409,
-          "Pengeluaran berubah bersamaan. Muat ulang sebelum mencoba lagi.",
-        );
-      }
-      const updatedExpense = await tx.expense.findFirst({
-        where: { id: expenseId, outletId },
-        include: { category: { select: { name: true } } },
-      });
-      const after = expenseSnapshot(updatedExpense);
-      if (JSON.stringify(before) === JSON.stringify(after)) {
-        throw new ExpenseError(
-          "NO_CHANGES",
-          400,
-          "Nilai koreksi sama dengan data pengeluaran saat ini.",
-        );
-      }
-      await tx.expenseAudit.create({
-        data: {
-          expenseId,
-          outletId,
-          actorId: userId,
-          clientTransactionId: payload.clientTransactionId,
-          payloadHash: digest,
-          action: "CORRECTED",
-          reason: payload.reason ?? null,
-          beforeSnapshot: before,
-          afterSnapshot: after,
-          createdAt: updatedAt,
-        },
-      });
-      return tx.expense.findFirst({
-        where: { id: expenseId, outletId },
-        include: expenseInclude,
+        // Periksa apakah periode tanggal saat ini maupun tanggal baru sudah ditutup closing
+        await assertExpensePeriodOpen(tx, outletId, current.expenseDate);
+        if (payload.expenseDate !== undefined) {
+          await assertExpensePeriodOpen(tx, outletId, new Date(payload.expenseDate));
+        }
+
+        if (payload.categoryId) {
+          const category = await tx.expenseCategory.findUnique({
+            where: { id: payload.categoryId },
+            select: { id: true },
+          });
+          if (!category) {
+            throw new ExpenseError(
+              "CATEGORY_UNAVAILABLE",
+              400,
+              "Kategori pengeluaran tidak tersedia.",
+            );
+          }
+        }
+
+        const before = expenseSnapshot(current);
+        const updatedAt = now();
+        const updateData = {
+          ...(payload.categoryId !== undefined
+            ? { categoryId: payload.categoryId }
+            : {}),
+          ...(payload.amount !== undefined
+            ? { amount: new Prisma.Decimal(payload.amount) }
+            : {}),
+          ...(payload.expenseDate !== undefined
+            ? { expenseDate: new Date(payload.expenseDate) }
+            : {}),
+          ...(payload.description !== undefined
+            ? { description: payload.description }
+            : {}),
+          updatedAt,
+        };
+        const changed = await tx.expense.updateMany({
+          where: {
+            id: expenseId,
+            outletId,
+            status: "ACTIVE",
+            updatedAt: current.updatedAt,
+          },
+          data: updateData,
+        });
+        if (changed.count !== 1) {
+          throw new ExpenseError(
+            "EXPENSE_CHANGED",
+            409,
+            "Pengeluaran berubah bersamaan. Muat ulang sebelum mencoba lagi.",
+          );
+        }
+        const updatedExpense = await tx.expense.findFirst({
+          where: { id: expenseId, outletId },
+          include: { category: { select: { name: true } } },
+        });
+        const after = expenseSnapshot(updatedExpense);
+        if (JSON.stringify(before) === JSON.stringify(after)) {
+          throw new ExpenseError(
+            "NO_CHANGES",
+            400,
+            "Nilai koreksi sama dengan data pengeluaran saat ini.",
+          );
+        }
+        await tx.expenseAudit.create({
+          data: {
+            expenseId,
+            outletId,
+            actorId: userId,
+            clientTransactionId: payload.clientTransactionId,
+            payloadHash: digest,
+            action: "CORRECTED",
+            reason: payload.reason ?? null,
+            beforeSnapshot: before,
+            afterSnapshot: after,
+            createdAt: updatedAt,
+          },
+        });
+        return tx.expense.findFirst({
+          where: { id: expenseId, outletId },
+          include: expenseInclude,
+        });
       });
     });
     return { expense, replayed: false };
@@ -454,61 +513,66 @@ async function cancelExpense({
 
   try {
     const expense = await prisma.$transaction(async (tx) => {
-      const current = await tx.expense.findFirst({
-        where: { id: expenseId, outletId },
-        include: { category: { select: { name: true } } },
-      });
-      if (!current) {
-        throw new ExpenseError("NOT_FOUND", 404, "Pengeluaran tidak ditemukan.");
-      }
-      if (current.status !== "ACTIVE") {
-        throw new ExpenseError(
-          "EXPENSE_NOT_ACTIVE",
-          409,
-          "Pengeluaran sudah dibatalkan.",
-        );
-      }
+      return withFinancialLock(tx, outletId, async () => {
+        const current = await tx.expense.findFirst({
+          where: { id: expenseId, outletId },
+          include: { category: { select: { name: true } } },
+        });
+        if (!current) {
+          throw new ExpenseError("NOT_FOUND", 404, "Pengeluaran tidak ditemukan.");
+        }
+        if (current.status !== "ACTIVE") {
+          throw new ExpenseError(
+            "EXPENSE_NOT_ACTIVE",
+            409,
+            "Pengeluaran sudah dibatalkan.",
+          );
+        }
 
-      const cancelledAt = now();
-      const before = expenseSnapshot(current);
-      const changed = await tx.expense.updateMany({
-        where: {
-          id: expenseId,
-          outletId,
-          status: "ACTIVE",
-          updatedAt: current.updatedAt,
-        },
-        data: { status: "CANCELLED", cancelledAt, updatedAt: cancelledAt },
-      });
-      if (changed.count !== 1) {
-        throw new ExpenseError(
-          "EXPENSE_CHANGED",
-          409,
-          "Pengeluaran berubah bersamaan. Muat ulang sebelum mencoba lagi.",
-        );
-      }
-      const updatedExpense = await tx.expense.findFirst({
-        where: { id: expenseId, outletId },
-        include: { category: { select: { name: true } } },
-      });
-      const after = expenseSnapshot(updatedExpense);
-      await tx.expenseAudit.create({
-        data: {
-          expenseId,
-          outletId,
-          actorId: userId,
-          clientTransactionId: payload.clientTransactionId,
-          payloadHash: digest,
-          action: "CANCELLED",
-          reason: payload.reason ?? null,
-          beforeSnapshot: before,
-          afterSnapshot: after,
-          createdAt: cancelledAt,
-        },
-      });
-      return tx.expense.findFirst({
-        where: { id: expenseId, outletId },
-        include: expenseInclude,
+        // Periksa apakah periode tanggal pengeluaran yang akan dibatalkan sudah ditutup closing
+        await assertExpensePeriodOpen(tx, outletId, current.expenseDate);
+
+        const cancelledAt = now();
+        const before = expenseSnapshot(current);
+        const changed = await tx.expense.updateMany({
+          where: {
+            id: expenseId,
+            outletId,
+            status: "ACTIVE",
+            updatedAt: current.updatedAt,
+          },
+          data: { status: "CANCELLED", cancelledAt, updatedAt: cancelledAt },
+        });
+        if (changed.count !== 1) {
+          throw new ExpenseError(
+            "EXPENSE_CHANGED",
+            409,
+            "Pengeluaran berubah bersamaan. Muat ulang sebelum mencoba lagi.",
+          );
+        }
+        const updatedExpense = await tx.expense.findFirst({
+          where: { id: expenseId, outletId },
+          include: { category: { select: { name: true } } },
+        });
+        const after = expenseSnapshot(updatedExpense);
+        await tx.expenseAudit.create({
+          data: {
+            expenseId,
+            outletId,
+            actorId: userId,
+            clientTransactionId: payload.clientTransactionId,
+            payloadHash: digest,
+            action: "CANCELLED",
+            reason: payload.reason ?? null,
+            beforeSnapshot: before,
+            afterSnapshot: after,
+            createdAt: cancelledAt,
+          },
+        });
+        return tx.expense.findFirst({
+          where: { id: expenseId, outletId },
+          include: expenseInclude,
+        });
       });
     });
     return { expense, replayed: false };
