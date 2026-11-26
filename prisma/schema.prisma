@@ -20,6 +20,11 @@ enum Role {
   CREW
 }
 
+enum OutletOwnershipType {
+  PUSAT
+  MITRA
+}
+
 enum OrderStatus {
   COMPLETED
   CANCELLED
@@ -140,6 +145,8 @@ model User {
   updatedAt          DateTime @updatedAt
 
   memberships                        OutletMembership[]
+  ownedOutlets                       Outlet[]                    @relation("OutletOwner")
+  outletOwnershipAssignments         Outlet[]                    @relation("OutletOwnershipAssignedBy")
   authSessions                       AuthSession[]
   passwordAuditsAsActor              UserPasswordAudit[]         @relation("UserPasswordAuditActor")
   passwordAuditsAsTarget             UserPasswordAudit[]         @relation("UserPasswordAuditTarget")
@@ -250,6 +257,14 @@ model Outlet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  ownershipType         OutletOwnershipType?
+  ownerUserId           String?
+  ownershipAssignedAt   DateTime?
+  ownershipAssignedById String?
+
+  owner              User? @relation("OutletOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  ownershipAssignedBy User? @relation("OutletOwnershipAssignedBy", fields: [ownershipAssignedById], references: [id], onDelete: SetNull)
+
   memberships         OutletMembership[]
   orders              Order[]
   expenses            Expense[]
@@ -274,6 +289,9 @@ model Outlet {
 
   outgoingRequests StockRequest[] @relation("SourceOutlet")
   incomingRequests StockRequest[] @relation("DestinationOutlet")
+
+  @@index([ownershipType, isActive])
+  @@index([ownerUserId])
 }
 
 model OutletMembership {
@@ -364,6 +382,7 @@ model Order {
   shopeeFoodOrders ShopeeFoodOrder[] @relation(name: "ShopeeFoodOrder")
 
   @@unique([outletId, crewId, clientTransactionId], map: "Order_outletId_crewId_clientTransactionId_key")
+  @@index([outletId, status, createdAt])
 }
 
 model OrderStatusHistory {

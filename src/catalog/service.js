@@ -119,6 +119,7 @@ export async function updateProduct(prisma, productId, data) {
   }
   if (data.description !== undefined) updateData.description = data.description ? data.description.trim() : null;
   if (data.category !== undefined) updateData.category = data.category ? data.category.trim() : null;
+  if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl ? data.imageUrl.trim() : null;
   if (data.isActive !== undefined) updateData.isActive = Boolean(data.isActive);
 
   const updated = await prisma.product.update({
