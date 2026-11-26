@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import { createAuthenticationMiddleware } from "../auth/middleware.js";
 import { writeAuditLog } from "../audit/service.js";
 import { ClosingError } from "./errors.js";
@@ -10,6 +11,18 @@ import {
   recordCashOpening,
   getCashOpening,
 } from "./service.js";
+
+const cashDifferenceReviewSchema = z
+  .object({
+    status: z.enum([
+      "BELUM_DIPERIKSA",
+      "SEDANG_DIPERIKSA",
+      "SUDAH_DIKETAHUI",
+      "BELUM_TERSELESAIKAN",
+    ]),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();
 
 function assertOutletId(outletId) {
   if (!outletId || outletId.length > 64) {
@@ -263,6 +276,81 @@ export function createClosingRoutes({
     return c.json({
       success: true,
       data: { cashOpening: result },
+    });
+  });
+
+  // Perbarui status investigasi selisih kas (Manager only, audit logged)
+  routes.patch("/:outletId/closings/:closingId/cash-difference", authenticate, async (c) => {
+    const outletId = c.req.param("outletId");
+    const closingId = c.req.param("closingId");
+    assertOutletId(outletId);
+    const auth = c.get("auth");
+    await requireMembership(prisma, auth.userId, outletId, ["MANAGER"]);
+
+    let body;
+    try {
+      body = cashDifferenceReviewSchema.parse(await c.req.json());
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        throw new ClosingError("VALIDATION_ERROR", 400, "Status investigasi selisih kas tidak valid.");
+      }
+      throw err;
+    }
+
+    const closing = await prisma.closingRecord.findFirst({
+      where: { id: closingId, outletId },
+    });
+    if (!closing) {
+      throw new ClosingError("CLOSING_NOT_FOUND", 404, "Closing tidak ditemukan.");
+    }
+    if (closing.cashDifference === null || closing.cashDifference === undefined) {
+      throw new ClosingError(
+        "NO_CASH_DIFFERENCE",
+        400,
+        "Closing ini tidak memiliki selisih kas untuk diperiksa.",
+      );
+    }
+
+    const reviewedAt = now();
+    const updated = await prisma.closingRecord.update({
+      where: { id: closing.id },
+      data: {
+        cashDifferenceStatus: body.status,
+        cashDifferenceReviewedAt: reviewedAt,
+        cashDifferenceReviewedById: auth.userId,
+        cashDifferenceReviewNote: body.note ?? closing.cashDifferenceReviewNote,
+      },
+    });
+
+    await writeAuditLog(prisma, {
+      actorUserId: auth.userId,
+      sessionId: auth.sessionId,
+      outletId,
+      action: "CASH_DIFFERENCE_REVIEWED",
+      resourceType: "ClosingRecord",
+      resourceId: closing.id,
+      metadata: {
+        previousStatus: closing.cashDifferenceStatus,
+        status: body.status,
+        noteProvided: Boolean(body.note),
+      },
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        closing: {
+          id: updated.id,
+          outletId: updated.outletId,
+          closingType: updated.closingType,
+          periodKey: updated.periodKey,
+          cashDifference: updated.cashDifference?.toString() ?? null,
+          cashDifferenceStatus: updated.cashDifferenceStatus,
+          cashDifferenceReviewedAt: updated.cashDifferenceReviewedAt?.toISOString() ?? null,
+          cashDifferenceReviewedById: updated.cashDifferenceReviewedById ?? null,
+          cashDifferenceReviewNote: updated.cashDifferenceReviewNote ?? null,
+        },
+      },
     });
   });
 

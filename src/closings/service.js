@@ -49,14 +49,10 @@ export function financialLockKey(outletId) {
  *  No manual unlock is needed. The lock MUST be inside a $transaction block.
  */
 export async function withAdvisoryLock(tx, lockKey, callback) {
-  console.log('[DEBUG] withAdvisoryLock acquired for key:', lockKey);
-  try {
-    // Transaction-level advisory lock: automatically released on commit/rollback
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
-  } catch (err) {
-    console.error('[DEBUG] withAdvisoryLock lock failed:', err);
-    throw err;
-  }
+  // Transaction-level advisory lock: automatically released on commit/rollback.
+  // ::text wajib: fungsi PostgreSQL ini mengembalikan void dan gagal
+  // dideserialisasi oleh Prisma $queryRaw.
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey})::text`;
   // Execute the callback inside the same transaction
   return await callback();
 }
@@ -66,15 +62,9 @@ export async function withAdvisoryLock(tx, lockKey, callback) {
  *  No dependence on closingType or periodKey.
  */
 export async function withFinancialLock(tx, outletId, callback) {
-  console.log('[DEBUG] withFinancialLock acquired for outlet:', outletId);
-  try {
-    if (typeof tx?.$queryRaw === "function") {
-      // Transaction-level advisory lock: auto-released on commit/rollback
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${financialLockKey(outletId)})`;
-    }
-  } catch (err) {
-    console.error('[DEBUG] withFinancialLock lock failed:', err);
-    throw err;
+  if (typeof tx?.$queryRaw === "function") {
+    // Transaction-level advisory lock: auto-released on commit/rollback
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${financialLockKey(outletId)})::text`;
   }
   return await callback();
 }
@@ -362,11 +352,7 @@ export async function performClosing({
 
   // Perform the entire closing operation within a single transaction and advisory lock
   return prisma.$transaction(async (tx) => {
-    console.log('[DEBUG] performClosing in transaction, acquiring financial lock for outlet');
-
-    // Perform the entire closing operation within a single transaction and advisory lock
     return withFinancialLock(tx, outletId, async () => {
-      console.log('[DEBUG] performClosing called');
 
       // Check clientTransactionId idempotency
       const existingAudit = tx.closingAudit?.findUnique
@@ -797,6 +783,12 @@ export async function listClosings({ prisma, outletId, closingType }) {
     reopenReason: record.reopenReason ?? null,
     notes: record.notes,
     unfinishedCount: record.unfinishedCount,
+    actualCash: record.actualCash?.toString() ?? null,
+    cashDifference: record.cashDifference?.toString() ?? null,
+    differenceReason: record.differenceReason ?? null,
+    cashDifferenceStatus: record.cashDifferenceStatus ?? "BELUM_DIPERIKSA",
+    cashDifferenceReviewNote: record.cashDifferenceReviewNote ?? null,
+    cashDifferenceReviewedAt: record.cashDifferenceReviewedAt?.toISOString() ?? null,
     summarySnapshot: record.summarySnapshot,
     history: (record.history || []).map((h) => ({
       id: h.id,

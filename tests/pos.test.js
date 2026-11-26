@@ -133,6 +133,9 @@ function createPosDatabase(role = "CREW") {
     },
     order: {
       async findUnique({ where }) {
+        if (where.id) {
+          return state.orders.find((order) => order.id === where.id) ?? null;
+        }
         const key = where.outletId_crewId_clientTransactionId;
         return (
           state.orders.find(
@@ -171,6 +174,35 @@ function createPosDatabase(role = "CREW") {
         };
         state.orders.push(order);
         return order;
+      },
+      async update({ where, data }) {
+        const order = state.orders.find((item) => item.id === where.id);
+        Object.assign(order, data);
+        return order;
+      },
+    },
+    orderItem: {
+      async update({ where, data }) {
+        for (const order of state.orders) {
+          const item = order.items.find((entry) => entry.id === where.id);
+          if (item) {
+            Object.assign(item, data);
+            return item;
+          }
+        }
+        return null;
+      },
+    },
+    orderPayment: {
+      async update({ where, data }) {
+        for (const order of state.orders) {
+          const payment = order.payments.find((entry) => entry.id === where.id);
+          if (payment) {
+            Object.assign(payment, data);
+            return payment;
+          }
+        }
+        return null;
       },
     },
     shopeeFoodOrder: {
@@ -406,6 +438,233 @@ test("order payload rejects client-supplied totals or role fields", async () => 
 
   assert.equal(response.status, 400);
   assert.equal(body.error.code, "VALIDATION_ERROR");
+});
+
+test("cash order returns change when cashReceived exceeds total", async () => {
+  const { app, accessToken } = createFixture();
+  const response = await postOrder(app, accessToken, "outlet-a", {
+    clientTransactionId: CLIENT_TRANSACTION_ID,
+    recordedOffline: false,
+    paymentMethod: "CASH",
+    cashReceived: "50000.00",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.data.order.total, "12000");
+  assert.equal(body.data.change, "38000");
+});
+
+test("cashReceived below total is rejected without creating an order", async () => {
+  const { app, accessToken, state } = createFixture();
+  const response = await postOrder(app, accessToken, "outlet-a", {
+    clientTransactionId: CLIENT_TRANSACTION_ID,
+    recordedOffline: false,
+    paymentMethod: "CASH",
+    cashReceived: "1000.00",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error.code, "PAYMENT_AMOUNT_MISMATCH");
+  assert.equal(state.orders.length, 0);
+});
+
+test("shopeeFood order accepts SHOPEEFOOD_IN_APP payment method", async () => {
+  const { app, accessToken, state } = createFixture();
+  const response = await postOrder(app, accessToken, "outlet-a", {
+    platformOrderId: "LM777",
+    recordedOffline: false,
+    paymentMethod: "SHOPEEFOOD_IN_APP",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.data.order.paymentMethod, "SHOPEEFOOD_IN_APP");
+  assert.equal(state.shopeeFoodOrders[0].paymentMethod, "SHOPEEFOOD_IN_APP");
+});
+
+test("item cancellation reduces total only for unpaid QRIS orders", async () => {
+  const { app, accessToken, state } = createFixture();
+  const created = await postOrder(app, accessToken, "outlet-a", {
+    clientTransactionId: CLIENT_TRANSACTION_ID,
+    recordedOffline: false,
+    paymentMethod: "QRIS",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 2,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const createdBody = await created.json();
+  assert.equal(createdBody.data.order.paymentStatus, "PENDING_RECONCILIATION");
+
+  const orderId = createdBody.data.order.id;
+  const itemId = createdBody.data.order.items[0].id;
+  const response = await app.request(
+    `/api/v1/outlets/outlet-a/orders/${orderId}/items/${itemId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ reason: "Pelanggan membatalkan item" }),
+    },
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, "FULL_CANCELLATION_REQUIRED");
+  assert.equal(state.orders[0].status, "COMPLETED");
+});
+
+test("item cancellation is rejected for fully paid orders", async () => {
+  const { app, accessToken } = createFixture();
+  const created = await postOrder(app, accessToken, "outlet-a", orderPayload());
+  const createdBody = await created.json();
+  assert.equal(createdBody.data.order.paymentStatus, "LUNAS");
+
+  const orderId = createdBody.data.order.id;
+  const itemId = createdBody.data.order.items[0].id;
+  const response = await app.request(
+    `/api/v1/outlets/outlet-a/orders/${orderId}/items/${itemId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ reason: "Salah input item" }),
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, "FULL_CANCELLATION_REQUIRED");
+});
+
+test("item cancellation on multi-item QRIS order recalculates total and payment", async () => {
+  const { app, accessToken, state } = createFixture();
+  const created = await postOrder(app, accessToken, "outlet-a", {
+    clientTransactionId: CLIENT_TRANSACTION_ID,
+    recordedOffline: false,
+    paymentMethod: "QRIS",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+      {
+        productVariantId: "variant-medium",
+        quantity: 2,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const createdBody = await created.json();
+  assert.equal(createdBody.data.order.total, "36000");
+
+  const orderId = createdBody.data.order.id;
+  const itemId = createdBody.data.order.items[1].id;
+  const response = await app.request(
+    `/api/v1/outlets/outlet-a/orders/${orderId}/items/${itemId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ reason: "Salah input jumlah" }),
+    },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.itemCancellation.newTotal, "12000");
+  assert.equal(body.data.order.total, "12000");
+  assert.equal(state.orders[0].items[1].cancelledById, "user-1");
+  assert.equal(state.orders[0].items[1].cancellationReason, "Salah input jumlah");
+
+  const secondAttempt = await app.request(
+    `/api/v1/outlets/outlet-a/orders/${orderId}/items/${itemId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ reason: "Salah input jumlah" }),
+    },
+  );
+  assert.equal(secondAttempt.status, 409);
+  assert.equal((await secondAttempt.json()).error.code, "ITEM_ALREADY_CANCELLED");
+});
+
+test("item cancellation requires a reason of at least 5 characters", async () => {
+  const { app, accessToken } = createFixture();
+  const created = await postOrder(app, accessToken, "outlet-a", {
+    clientTransactionId: CLIENT_TRANSACTION_ID,
+    recordedOffline: false,
+    paymentMethod: "QRIS",
+    items: [
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+      {
+        productVariantId: "variant-medium",
+        quantity: 1,
+        expectedVariantPrice: "12000.00",
+        addOns: [],
+      },
+    ],
+  });
+  const createdBody = await created.json();
+  const response = await app.request(
+    `/api/v1/outlets/outlet-a/orders/${createdBody.data.order.id}/items/${createdBody.data.order.items[0].id}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ reason: "hm" }),
+    },
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, "VALIDATION_ERROR");
 });
 
 test("shopeeFood order creates a regular POS order plus source marker row", async () => {

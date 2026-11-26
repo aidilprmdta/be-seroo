@@ -269,3 +269,136 @@ export function generateReportHtml({ report, outlet, closingRecord }) {
 </html>`;
 }
 
+function asciiOnly(text) {
+  return String(text ?? "").replace(/[^\x20-\x7E]/g, "-");
+}
+
+function reportLines({ report, outlet, closingRecord }) {
+  const closingLabel = closingRecord
+    ? `${closingRecord.status} (Versi ${closingRecord.version})`
+    : "BELUM CLOSING - BUKAN LAPORAN FINAL";
+  const lines = [
+    "LAPORAN PENJUALAN & KEUANGAN TEH TARIK SEROO",
+    `Outlet   : ${outlet?.name || report.outletId} (${outlet?.code || "-"})`,
+    `Tipe     : ${report.period.type === "DAILY" ? "Rekap Harian" : "Rekap Bulanan"}`,
+    `Periode  : ${report.period.type === "DAILY" ? report.period.date : report.period.month}`,
+    `Timezone : ${report.period.timezone} (WIB)`,
+    `Closing  : ${closingLabel}`,
+    "",
+    "RINGKASAN KEUANGAN",
+    `Total Pemasukan (POS) : Rp ${formatNumber(report.summary.totalIncome)}`,
+    `Total Pengeluaran     : Rp ${formatNumber(report.summary.totalExpense)}`,
+    `Arus Kas Bersih       : Rp ${formatNumber(report.summary.netBalance)}`,
+    `Transaksi Selesai     : ${report.summary.transactionCount}`,
+    `Pengeluaran Aktif     : ${report.summary.expenseCount}`,
+    "",
+    "RINCIAN METODE PEMBAYARAN",
+    `Tunai (Cash)                  : ${report.paymentSummary.cash.count} transaksi, Rp ${formatNumber(report.paymentSummary.cash.total)}`,
+    `QRIS (Tercatat)               : ${report.paymentSummary.qris.recorded.count} transaksi, Rp ${formatNumber(report.paymentSummary.qris.recorded.total)}`,
+    `QRIS (Pending Rekonsiliasi)   : ${report.paymentSummary.qris.pendingReconciliation.count} transaksi, Rp ${formatNumber(report.paymentSummary.qris.pendingReconciliation.total)}`,
+    `ShopeeFood In-App             : ${report.paymentSummary.shopeeFood?.inApp?.count ?? 0} transaksi, Rp ${formatNumber(report.paymentSummary.shopeeFood?.inApp?.total ?? 0)}`,
+    `ShopeeFood COD                : ${report.paymentSummary.shopeeFood?.cod?.count ?? 0} transaksi, Rp ${formatNumber(report.paymentSummary.shopeeFood?.cod?.total ?? 0)}`,
+    "",
+    "PENJUALAN BERDASARKAN PRODUK DAN UKURAN",
+  ];
+  for (const item of report.productSales || []) {
+    lines.push(
+      `${item.productName} / ${item.variantName} : ${item.quantity} cup, Rp ${formatNumber(item.total)}`,
+    );
+  }
+  return lines;
+}
+
+function escapeXml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Excel tanpa dependency: SpreadsheetML 2003 (dibuka Excel sebagai .xls).
+export function generateReportXlsx({ report, outlet, closingRecord }) {
+  const rows = reportLines({ report, outlet, closingRecord })
+    .map((line) => {
+      if (!line) return "<Row/>";
+      const cells = line.split(/:(.+)/).filter((part) => part !== "").map((part, index) => {
+        const isNumber = /^\s*\d+\s*$/.test(part);
+        const type = isNumber && index > 0 ? "Number" : "String";
+        return `<Cell><Data ss:Type="${type}">${escapeXml(part.trim())}</Data></Cell>`;
+      });
+      return `<Row>${cells.join("")}</Row>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="Laporan"><Table>${rows}</Table></Worksheet>
+</Workbook>`;
+}
+
+// PDF tanpa dependency: generator minimal (satu font, teks baris).
+export function generateReportPdf({ report, outlet, closingRecord }) {
+  const allLines = reportLines({ report, outlet, closingRecord }).map(asciiOnly);
+  const perPage = 52;
+  const pages = [];
+  for (let i = 0; i < allLines.length; i += perPage) {
+    pages.push(allLines.slice(i, i + perPage));
+  }
+  if (pages.length === 0) pages.push(["Tidak ada data."]);
+
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 40;
+  const lineHeight = 14;
+
+  const objects = {};
+  const pageObjectNumbers = [];
+  const contentObjectNumbers = [];
+  let nextNumber = 4;
+  for (let i = 0; i < pages.length; i += 1) {
+    pageObjectNumbers.push(nextNumber);
+    nextNumber += 1;
+    contentObjectNumbers.push(nextNumber);
+    nextNumber += 1;
+  }
+
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2] = `<< /Type /Pages /Count ${pages.length} /Kids [${pageObjectNumbers
+    .map((n) => `${n} 0 R`)
+    .join(" ")}] >>`;
+  objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+  pages.forEach((lines, index) => {
+    const stream = [
+      "BT",
+      "/F1 10 Tf",
+      `1 0 0 1 ${margin} ${pageHeight - margin} Tm`,
+      `${lineHeight} TL`,
+      ...lines.map((line) => `(${line.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)")}) Tj T*`),
+      "ET",
+    ].join("\n");
+    objects[contentObjectNumbers[index]] =
+      `<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`;
+    objects[pageObjectNumbers[index]] =
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] ` +
+      `/Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjectNumbers[index]} 0 R >>`;
+  });
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = {};
+  const maxObject = nextNumber - 1;
+  for (let n = 1; n <= maxObject; n += 1) {
+    offsets[n] = Buffer.byteLength(pdf, "latin1");
+    pdf += `${n} 0 obj\n${objects[n] ?? "<< >>"}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${maxObject + 1}\n0000000000 65535 f \n`;
+  for (let n = 1; n <= maxObject; n += 1) {
+    pdf += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${maxObject + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return pdf;
+}

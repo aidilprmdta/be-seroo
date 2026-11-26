@@ -46,48 +46,6 @@ export function createReceiptRoutes({
   const routes = new Hono();
   const authenticate = createAuthenticationMiddleware({ prisma, accessTokenSecret });
 
-  routes.get("/:outletId/orders/:orderId/export", authenticate, async (c) => {
-    const outletId = c.req.param("outletId");
-    const orderId = c.req.param("orderId");
-    assertOutletId(outletId);
-    const auth = c.get("auth");
-    await requireOutletMembership(prisma, auth.userId, outletId, ["MANAGER", "OWNER", "OWNER_MITRA"]);
-
-    let body;
-    try { body = exportSchema.parse(await c.req.json()); } catch (err) {
-      if (err instanceof z.ZodError) throw new PosError("VALIDATION_ERROR", 400, err.issues[0].message);
-      throw err;
-    }
-
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: true, payments: true },
-    });
-    if (!order) throw new PosError("ORDER_NOT_FOUND", 404, "Transaksi tidak ditemukan.");
-
-    // For MVP: return a structured preview with the file mock ready to download
-    const result = exportOrder({ ...order, total: order.total.toString() });
-    return c.json({
-      success: true,
-      data: {
-        order: {
-          id: order.id, orderNumber: order.orderNumber, outletId: order.outletId,
-          status: order.status, paymentMethod: order.paymentMethod,
-          paymentStatus: order.paymentStatus, total: order.total.toString(),
-          createdAt: order.createdAt.toISOString(),
-          items: order.items?.map((i) => ({ productName: i.productName, quantity: i.quantity, subtotal: i.subtotal })) || [],
-          payments: order.payments?.map((p) => ({ paymentMethod: p.paymentMethod, amount: p.amount, status: p.paymentStatus })) || [],
-        },
-        download: {
-          filename: result.filename,
-          mimetype: result.mimetype,
-          content: result.content,
-          format: result.format,
-        },
-      },
-    });
-  });
-
   routes.get("/:outletId/reports/cash-flow", authenticate, async (c) => {
     const outletId = c.req.param("outletId");
     assertOutletId(outletId);
@@ -169,47 +127,6 @@ export function createReceiptRoutes({
             ? [["Day", "Order Count", "Total Sales", "Total Expenses", "Net Cash"].join(",")]
                 .concat(rows.map((r) => [r.day, r.orderCount, r.totalSales.toFixed(2), r.totalExpenses.toFixed(2), r.netCash.toFixed(2)].join(",")))
             : JSON.stringify(rows, null, 2),
-        },
-      },
-    });
-  });
-
-  // Stock transfer report
-  routes.get("/:outletId/reports/stock-transfer", authenticate, async (c) => {
-    const outletId = c.req.param("outletId");
-    assertOutletId(outletId);
-    const auth = c.get("auth");
-    await requireOutletMembership(prisma, auth.userId, outletId);
-
-    const format = c.req.query("format") || "CSV";
-    const status = c.req.query("status");
-    const transfers = await prisma.outletStockTransfer.findMany({
-      where: { outletId, ...(status ? { status } : {}) },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return c.json({
-      success: true,
-      data: {
-        report: {
-          outletId, status, generatedAt: new Date().toISOString(),
-          count: transfers.length,
-          transfers: transfers.map((t) => ({
-            id: t.id, fromOutletId: t.fromOutletId, toOutletId: t.toOutletId,
-            status: t.status, itemIds: t.itemIds, quantities: t.quantities,
-            totalQuantity: t.totalQuantity, notes: t.notes,
-            requestedAt: t.requestedAt.toISOString(), approvedAt: t.approvedAt?.toISOString() || null,
-            cancelledAt: t.cancelledAt?.toISOString() || null,
-          })),
-        },
-        format,
-        download: {
-          filename: `stock-transfer-${status || "all"}.${format.toLowerCase()}`,
-          mimetype: `text/${format.toLowerCase() === "csv" ? "csv" : "octet-stream"}`,
-          content: format.toUpperCase() === "CSV"
-            ? [["ID", "From Outlet", "To Outlet", "Status", "Items", "Qty", "Notes", "Requested", "Approved"].join(",")]
-                .concat(transfers.map((t) => [t.id, t.fromOutletId, t.toOutletId, t.status, t.itemIds.join(";"), t.quantities.join(";"), t.notes || "", t.requestedAt.slice(0, 10), t.approvedAt?.slice(0, 10) || ""]))
-            : JSON.stringify(transfers, null, 2),
         },
       },
     });

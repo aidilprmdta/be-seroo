@@ -10,6 +10,10 @@ const handoverSchema = z
     crewUserId: z.string().min(1).max(64).optional(),
     crewName: z.string().min(1).max(128).optional(),
     handoverAt: z.string().datetime().optional(),
+    summary: z.string().trim().max(500).optional(),
+    cashHandover: z.string().trim().max(200).optional(),
+    checklistAgenda: z.string().trim().max(500).optional(),
+    checklistService: z.string().trim().max(500).optional(),
     notes: z.string().max(500).optional(),
   })
   .strict();
@@ -80,8 +84,10 @@ export function createShiftHandoverRoutes({
     });
     if (existing) {
       return c.json({ success: true, data: { handover: {
-        id: existing.id, currentOutlet: existing.currentOutlet, nextOutlet: existing.nextOutlet,
+        id: existing.id, currentOutlet: existing.outletId, nextOutlet: existing.nextOutlet,
         crewName: existing.crewName, crewUserId: existing.crewUserId, status: existing.status,
+        summary: existing.summary, cashHandover: existing.cashHandover,
+        checklistAgenda: existing.checklistAgenda, checklistService: existing.checklistService,
         notes: existing.notes, handoverAt: existing.handoverAt?.toISOString() || null,
         createdAt: existing.createdAt.toISOString(),
       } } }, 200);
@@ -90,18 +96,24 @@ export function createShiftHandoverRoutes({
     const handover = await prisma.shiftHandover.create({
       data: {
         outletId,
-        currentOutlet: body.currentOutlet,
+        // Schema hanya punya outletId; currentOutlet di request adalah outlet asal yang sama.
         nextOutlet: body.nextOutlet,
         crewUserId: body.crewUserId || auth.userId,
         crewName: body.crewName || (await prisma.user.findUnique({ where: { id: auth.userId } }).then((u) => u?.name)),
         handoverAt: body.handoverAt || new Date(),
+        summary: body.summary,
+        cashHandover: body.cashHandover,
+        checklistAgenda: body.checklistAgenda,
+        checklistService: body.checklistService,
         notes: body.notes,
       },
     });
 
     return c.json({ success: true, data: { handover: {
-      id: handover.id, currentOutlet: handover.currentOutlet, nextOutlet: handover.nextOutlet,
+      id: handover.id, currentOutlet: handover.outletId, nextOutlet: handover.nextOutlet,
       crewName: handover.crewName, crewUserId: handover.crewUserId, status: handover.status,
+      summary: handover.summary, cashHandover: handover.cashHandover,
+      checklistAgenda: handover.checklistAgenda, checklistService: handover.checklistService,
       notes: handover.notes, handoverAt: handover.handoverAt?.toISOString() || null,
       createdAt: handover.createdAt.toISOString(),
     } } }, 201);
@@ -123,8 +135,10 @@ export function createShiftHandoverRoutes({
     });
 
     return c.json({ success: true, data: { handovers: handovers.map((h) => ({
-      id: h.id, currentOutlet: h.currentOutlet, nextOutlet: h.nextOutlet,
+      id: h.id, currentOutlet: h.outletId, nextOutlet: h.nextOutlet,
       crewName: h.crewName, crewUserId: h.crewUserId, status: h.status,
+      summary: h.summary, cashHandover: h.cashHandover,
+      checklistAgenda: h.checklistAgenda, checklistService: h.checklistService,
       notes: h.notes, handoverAt: h.handoverAt?.toISOString() || null,
       createdAt: h.createdAt.toISOString(), acceptedAt: h.acceptedAt?.toISOString() || null,
       rejectedAt: h.rejectedAt?.toISOString() || null,
@@ -144,8 +158,10 @@ export function createShiftHandoverRoutes({
     if (!handover) throw new PosError("HANDOVER_NOT_FOUND", 404, "Serah terima tidak ditemukan.");
 
     return c.json({ success: true, data: { handover: {
-      id: handover.id, currentOutlet: handover.currentOutlet, nextOutlet: handover.nextOutlet,
+      id: handover.id, currentOutlet: handover.outletId, nextOutlet: handover.nextOutlet,
       crewName: handover.crewName, crewUserId: handover.crewUserId, status: handover.status,
+      summary: handover.summary, cashHandover: handover.cashHandover,
+      checklistAgenda: handover.checklistAgenda, checklistService: handover.checklistService,
       notes: handover.notes, handoverAt: handover.handoverAt?.toISOString() || null,
       createdAt: handover.createdAt.toISOString(), acceptedAt: handover.acceptedAt?.toISOString() || null,
       rejectedAt: handover.rejectedAt?.toISOString() || null,

@@ -126,6 +126,10 @@ function aggregateReportData(orders, expenses) {
   let qrisRecordedCount = 0;
   let qrisPendingSales = new Prisma.Decimal("0.00");
   let qrisPendingCount = 0;
+  let shopeeInAppSales = new Prisma.Decimal("0.00");
+  let shopeeInAppCount = 0;
+  let shopeeCodSales = new Prisma.Decimal("0.00");
+  let shopeeCodCount = 0;
 
   const productSalesMap = new Map();
 
@@ -150,6 +154,12 @@ function aggregateReportData(orders, expenses) {
             qrisPendingSales = qrisPendingSales.add(pAmt);
             qrisPendingCount += 1;
           }
+        } else if (p.paymentMethod === "SHOPEEFOOD_IN_APP") {
+          shopeeInAppSales = shopeeInAppSales.add(pAmt);
+          shopeeInAppCount += 1;
+        } else if (p.paymentMethod === "SHOPEEFOOD_COD") {
+          shopeeCodSales = shopeeCodSales.add(pAmt);
+          shopeeCodCount += 1;
         }
       }
     } else {
@@ -167,6 +177,12 @@ function aggregateReportData(orders, expenses) {
           qrisPendingSales = qrisPendingSales.add(orderTotal);
           qrisPendingCount += 1;
         }
+      } else if (order.paymentMethod === "SHOPEEFOOD_IN_APP") {
+        shopeeInAppSales = shopeeInAppSales.add(orderTotal);
+        shopeeInAppCount += 1;
+      } else if (order.paymentMethod === "SHOPEEFOOD_COD") {
+        shopeeCodSales = shopeeCodSales.add(orderTotal);
+        shopeeCodCount += 1;
       }
     }
 
@@ -251,6 +267,16 @@ function aggregateReportData(orders, expenses) {
         pendingReconciliation: {
           count: qrisPendingCount,
           total: qrisPendingSales.toFixed(2),
+        },
+      },
+      shopeeFood: {
+        inApp: {
+          count: shopeeInAppCount,
+          total: shopeeInAppSales.toFixed(2),
+        },
+        cod: {
+          count: shopeeCodCount,
+          total: shopeeCodSales.toFixed(2),
         },
       },
     },

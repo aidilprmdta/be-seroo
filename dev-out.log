@@ -1,0 +1,183 @@
+Seroo API listening on port 3000
+request {
+  requestId: '421f7878-f427-486b-a5d8-38804034b9dd',
+  method: 'GET',
+  path: '/health/ready',
+  status: 200,
+  durationMs: 89
+}
+request {
+  requestId: 'b91888fe-fbce-4f40-9f37-36c52024f03b',
+  method: 'POST',
+  path: '/api/v1/auth/login',
+  status: 200,
+  durationMs: 310
+}
+request {
+  requestId: 'a0ac81cc-5918-4d76-8ff1-33fe955b68cc',
+  method: 'POST',
+  path: '/api/v1/auth/login',
+  status: 200,
+  durationMs: 285
+}
+request {
+  requestId: '982beba0-3a94-49c7-a001-82911214688c',
+  method: 'POST',
+  path: '/api/v1/auth/login',
+  status: 200,
+  durationMs: 389
+}
+request {
+  requestId: '00aa6811-837b-41f6-a1ac-54a817f7eff4',
+  method: 'POST',
+  path: '/api/v1/auth/login',
+  status: 200,
+  durationMs: 283
+}
+request {
+  requestId: 'e74d152b-05f0-4194-9211-02538a9c209b',
+  method: 'GET',
+  path: '/api/v1/auth/me',
+  status: 200,
+  durationMs: 13
+}
+request {
+  requestId: '2d548eff-7071-483a-941f-a06bbb7002db',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/catalog',
+  status: 200,
+  durationMs: 100
+}
+request {
+  requestId: 'b61eb698-90ce-40ae-a53f-a8de85bcbadc',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders',
+  status: 201,
+  durationMs: 98
+}
+request {
+  requestId: '3f433124-31da-4500-93fe-691ec8e81007',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders',
+  status: 201,
+  durationMs: 38
+}
+request {
+  requestId: 'cd2e99a3-e4de-49fc-81ea-04e628a9b772',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders/cmwwiruab000yucdgswmo200v/items/cmwwiruab0011ucdgd5aisk3m/cancel',
+  status: 200,
+  durationMs: 35
+}
+request {
+  requestId: '3a7677d3-0683-43f8-9a02-5cdeba37a2fd',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders/cmwwiru8y000pucdgad9f69gh/items/cmwwiru8y000rucdgnyx8j5jm/cancel',
+  status: 409,
+  durationMs: 11
+}
+request {
+  requestId: '775ea5c7-236e-4d52-954b-2d1386d79e3d',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders/cmwwiruab000yucdgswmo200v/verify-qris',
+  status: 200,
+  durationMs: 40
+}
+request {
+  requestId: '847de131-239c-4b7e-8521-277a35239bc0',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders',
+  status: 201,
+  durationMs: 42
+}
+request {
+  requestId: 'dcadadc7-0f94-4cc8-b142-650332c578da',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/orders',
+  status: 201,
+  durationMs: 38
+}
+request {
+  requestId: '6ecdb954-c11c-4f85-8444-16621436f740',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/notifications',
+  status: 200,
+  durationMs: 103
+}
+request {
+  requestId: '3f2ee9ad-d6c8-4483-b0e1-977d9bb84a29',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/notifications',
+  status: 200,
+  durationMs: 17
+}
+request {
+  requestId: '7963f5d1-8bd4-407b-9cb1-de0b5ae7187c',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/request',
+  status: 201,
+  durationMs: 22
+}
+request {
+  requestId: '91c2132f-bf0e-458e-9819-c8bbc91515d9',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/requests',
+  status: 200,
+  durationMs: 12
+}
+request {
+  requestId: '875184ad-3ffa-42e8-b44e-06f911055ee7',
+  method: 'PATCH',
+  path: '/api/v1/outlets/outlet-rumbai/requests/cmwwirul6001yucdgnjfdzc31',
+  status: 200,
+  durationMs: 16
+}
+request {
+  requestId: '9d870bc8-2a6c-4489-a0dc-66dd446660a7',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/expenses',
+  status: 403,
+  durationMs: 7
+}
+request {
+  requestId: '2aa4c07e-d30c-4e69-b8b5-83f040306416',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/reports/export/pdf',
+  status: 200,
+  durationMs: 29
+}
+request {
+  requestId: '1f4a0065-50ae-48ae-b703-21ee971a642a',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/reports/export/xlsx',
+  status: 200,
+  durationMs: 25
+}
+request {
+  requestId: '84c00719-f3fe-437b-af6f-780aaf5ed229',
+  method: 'POST',
+  path: '/api/v1/outlets/outlet-rumbai/closings',
+  status: 201,
+  durationMs: 56
+}
+request {
+  requestId: '26441dd3-e499-40eb-bdf5-6521e22bcd61',
+  method: 'PATCH',
+  path: '/api/v1/outlets/outlet-rumbai/closings/cmwwiruq30024ucdgfmksaayi/cash-difference',
+  status: 200,
+  durationMs: 21
+}
+request {
+  requestId: 'b2bd7494-58fa-4635-8b75-6da1364ab640',
+  method: 'GET',
+  path: '/api/v1/outlets/outlet-rumbai/closings',
+  status: 200,
+  durationMs: 17
+}
+request {
+  requestId: '012f2aa1-ce72-4483-8105-b71b11b21bdf',
+  method: 'GET',
+  path: '/health/ready',
+  status: 200,
+  durationMs: 5
+}

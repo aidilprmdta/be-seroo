@@ -29,6 +29,15 @@ enum PaymentMethod {
   CASH
   QRIS
   SPLIT
+  SHOPEEFOOD_IN_APP
+  SHOPEEFOOD_COD
+}
+
+enum CashDifferenceStatus {
+  BELUM_DIPERIKSA
+  SEDANG_DIPERIKSA
+  SUDAH_DIKETAHUI
+  BELUM_TERSELESAIKAN
 }
 
 enum PaymentStatus {
@@ -353,6 +362,8 @@ model Order {
   statusHistory OrderStatusHistory[]
 
   shopeeFoodOrders ShopeeFoodOrder[] @relation(name: "ShopeeFoodOrder")
+
+  @@unique([outletId, crewId, clientTransactionId], map: "Order_outletId_crewId_clientTransactionId_key")
 }
 
 model OrderStatusHistory {
@@ -396,6 +407,9 @@ model OrderItem {
   quantity         Int
   unitPrice        Decimal @db.Decimal(12, 2)
   subtotal         Decimal @db.Decimal(12, 2)
+  cancelledAt      DateTime?
+  cancelledById    String?
+  cancellationReason String?
 
   order          Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productVariant ProductVariant   @relation(fields: [productVariantId], references: [id])
@@ -716,6 +730,10 @@ model ClosingRecord {
   actualCash          Decimal?      @db.Decimal(12, 2)
   cashDifference      Decimal?      @db.Decimal(12, 2)
   differenceReason    String?
+  cashDifferenceStatus        CashDifferenceStatus @default(BELUM_DIPERIKSA)
+  cashDifferenceReviewedAt    DateTime?
+  cashDifferenceReviewedById  String?
+  cashDifferenceReviewNote    String?
   clientTransactionId String?
   payloadHash         String?
   createdAt           DateTime      @default(now())
@@ -783,6 +801,10 @@ model ShiftHandover {
   nextOutlet    String
   handoverAt    DateTime @default(now())
   status        ShiftHandoverStatus @default(PENDING)
+  summary       String?
+  cashHandover  String?
+  checklistAgenda String?
+  checklistService String?
   notes         String?
   acceptedAt    DateTime?
   rejectedAt    DateTime?
@@ -828,6 +850,7 @@ model ShopeeFoodOrder {
 
   @@index([outletId, platformStatus])
   @@index([outletId, createdAt])
+  @@unique([platformOrderId], map: "ShopeeFoodOrder_platformOrderId_key")
 }
 
 model OutletStockTransfer {
