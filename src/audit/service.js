@@ -2,7 +2,7 @@ const SENSITIVE_KEY = /(password|token|secret|authorization|cookie|credential|ha
 const MAX_STRING_LENGTH = 500;
 const MAX_KEYS = 50;
 
-function redact(value, depth = 0) {
+function redact(value, depth = 0, extraKeyPattern = null) {
   if (depth > 4) return "[REDACTED_DEPTH]";
   if (value === null || typeof value === "number" || typeof value === "boolean") {
     return value;
@@ -12,20 +12,30 @@ function redact(value, depth = 0) {
       ? `${value.slice(0, MAX_STRING_LENGTH)}...[TRUNCATED]`
       : value;
   }
-  if (Array.isArray(value)) return value.slice(0, MAX_KEYS).map((item) => redact(item, depth + 1));
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_KEYS)
+      .map((item) => redact(item, depth + 1, extraKeyPattern));
+  }
   if (typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
         .slice(0, MAX_KEYS)
-        .map(([key, item]) => [key, SENSITIVE_KEY.test(key) ? "[REDACTED]" : redact(item, depth + 1)]),
+        .map(([key, item]) => [
+          key,
+          SENSITIVE_KEY.test(key) ||
+          (extraKeyPattern && extraKeyPattern.test(key))
+            ? "[REDACTED]"
+            : redact(item, depth + 1, extraKeyPattern),
+        ]),
     );
   }
   return String(value);
 }
 
-export function sanitizeAuditMetadata(metadata) {
+export function sanitizeAuditMetadata(metadata, { extraKeyPattern } = {}) {
   if (metadata === undefined) return undefined;
-  return redact(metadata);
+  return redact(metadata, 0, extraKeyPattern ?? null);
 }
 
 export async function writeAuditLog(prisma, data) {

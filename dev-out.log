@@ -1,183 +1,1652 @@
 Seroo API listening on port 3000
 request {
-  requestId: '421f7878-f427-486b-a5d8-38804034b9dd',
+  requestId: 'fd33c420-ff0b-47e1-b4c5-9e982e928dc9',
   method: 'GET',
   path: '/health/ready',
   status: 200,
-  durationMs: 89
+  durationMs: 105
 }
 request {
-  requestId: 'b91888fe-fbce-4f40-9f37-36c52024f03b',
-  method: 'POST',
-  path: '/api/v1/auth/login',
-  status: 200,
-  durationMs: 310
-}
-request {
-  requestId: 'a0ac81cc-5918-4d76-8ff1-33fe955b68cc',
-  method: 'POST',
-  path: '/api/v1/auth/login',
-  status: 200,
-  durationMs: 285
-}
-request {
-  requestId: '982beba0-3a94-49c7-a001-82911214688c',
-  method: 'POST',
-  path: '/api/v1/auth/login',
-  status: 200,
-  durationMs: 389
-}
-request {
-  requestId: '00aa6811-837b-41f6-a1ac-54a817f7eff4',
-  method: 'POST',
-  path: '/api/v1/auth/login',
-  status: 200,
-  durationMs: 283
-}
-request {
-  requestId: 'e74d152b-05f0-4194-9211-02538a9c209b',
+  requestId: '85eb5219-3038-4a8d-86db-005e36b896cd',
   method: 'GET',
-  path: '/api/v1/auth/me',
+  path: '/health',
   status: 200,
-  durationMs: 13
+  durationMs: 1
 }
 request {
-  requestId: '2d548eff-7071-483a-941f-a06bbb7002db',
+  requestId: '10673abd-5511-4719-a8a3-1feb03e11ddf',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/catalog',
+  path: '/health',
   status: 200,
-  durationMs: 100
+  durationMs: 1
 }
 request {
-  requestId: 'b61eb698-90ce-40ae-a53f-a8de85bcbadc',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders',
-  status: 201,
-  durationMs: 98
-}
-request {
-  requestId: '3f433124-31da-4500-93fe-691ec8e81007',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders',
-  status: 201,
-  durationMs: 38
-}
-request {
-  requestId: 'cd2e99a3-e4de-49fc-81ea-04e628a9b772',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders/cmwwiruab000yucdgswmo200v/items/cmwwiruab0011ucdgd5aisk3m/cancel',
-  status: 200,
-  durationMs: 35
-}
-request {
-  requestId: '3a7677d3-0683-43f8-9a02-5cdeba37a2fd',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders/cmwwiru8y000pucdgad9f69gh/items/cmwwiru8y000rucdgnyx8j5jm/cancel',
-  status: 409,
-  durationMs: 11
-}
-request {
-  requestId: '775ea5c7-236e-4d52-954b-2d1386d79e3d',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders/cmwwiruab000yucdgswmo200v/verify-qris',
-  status: 200,
-  durationMs: 40
-}
-request {
-  requestId: '847de131-239c-4b7e-8521-277a35239bc0',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders',
-  status: 201,
-  durationMs: 42
-}
-request {
-  requestId: 'dcadadc7-0f94-4cc8-b142-650332c578da',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/orders',
-  status: 201,
-  durationMs: 38
-}
-request {
-  requestId: '6ecdb954-c11c-4f85-8444-16621436f740',
+  requestId: 'd7ebbe0a-ccc9-45ba-a9f3-2019672e7fa8',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/notifications',
+  path: '/health',
   status: 200,
-  durationMs: 103
+  durationMs: 1
 }
 request {
-  requestId: '3f2ee9ad-d6c8-4483-b0e1-977d9bb84a29',
+  requestId: '3b97ff10-e30b-488a-8ae5-87f0328b0551',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/notifications',
+  path: '/health',
   status: 200,
-  durationMs: 17
+  durationMs: 1
 }
 request {
-  requestId: '7963f5d1-8bd4-407b-9cb1-de0b5ae7187c',
-  method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/request',
-  status: 201,
-  durationMs: 22
-}
-request {
-  requestId: '91c2132f-bf0e-458e-9819-c8bbc91515d9',
+  requestId: 'c087a59c-9de0-4b3a-b364-6cfe9b36278b',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/requests',
+  path: '/health',
   status: 200,
-  durationMs: 12
+  durationMs: 1
 }
 request {
-  requestId: '875184ad-3ffa-42e8-b44e-06f911055ee7',
-  method: 'PATCH',
-  path: '/api/v1/outlets/outlet-rumbai/requests/cmwwirul6001yucdgnjfdzc31',
-  status: 200,
-  durationMs: 16
-}
-request {
-  requestId: '9d870bc8-2a6c-4489-a0dc-66dd446660a7',
+  requestId: '3905e310-7524-40db-8eb9-182ccd81865b',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/expenses',
-  status: 403,
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'e940b299-104b-420f-9f4b-544c2ae78fbb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '19ef01c8-23de-455e-915f-aa9a92834fc8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'a3755143-460d-461b-84a8-31979a8024c1',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '0d57385e-2147-48b6-b223-7a065550f82b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '4890be48-ddf6-47cc-ad4f-f41bd0976431',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '9bbb216f-fa4c-4a44-a305-b7b97e67dfa4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ff22de01-3d84-43ed-b44e-2e6a2b9212e1',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ba4772dc-508e-4821-84d7-eed00c3f651b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'e5c03870-fa9d-4a3d-8614-22739fddb206',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '0f20b0ff-c28a-400f-86e5-2ec1dcdc6900',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+Change detected in 'C:\\Users\\ASUS\\Aidil\\sero-system\\backend\\src\\config\\env.js'
+Restarting 'src/index.js'
+Seroo API listening on port 3000
+request {
+  requestId: 'c10b94e7-ed51-45ba-94e6-b4e765a84634',
+  method: 'GET',
+  path: '/health',
+  status: 200,
   durationMs: 7
 }
 request {
-  requestId: '2aa4c07e-d30c-4e69-b8b5-83f040306416',
+  requestId: '76d0decd-f9b2-4e59-a086-a2e6ce8a6c7c',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/reports/export/pdf',
+  path: '/health',
   status: 200,
-  durationMs: 29
+  durationMs: 1
 }
 request {
-  requestId: '1f4a0065-50ae-48ae-b703-21ee971a642a',
+  requestId: '5d35c2b4-1f0f-4023-ba57-2bbe7ad9f575',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/reports/export/xlsx',
+  path: '/health',
   status: 200,
-  durationMs: 25
+  durationMs: 1
 }
 request {
-  requestId: '84c00719-f3fe-437b-af6f-780aaf5ed229',
+  requestId: '42dff75a-4bea-407d-9c3d-26d04fc583a8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '8552c7b5-a7fd-4b2f-b039-135de1b764eb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'f506c5d8-0ddc-4525-aef3-3e491fd68f30',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b8c24ae7-dd0c-40da-8338-687895da4971',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '8e1e2c42-a93f-457b-89af-a912ed39b111',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'cc1f72e5-524e-40f1-835d-b26fd6be180f',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'a883bc71-f80f-4564-b9d2-9ab8cd85c56a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ef8df565-e07a-4b60-b3a2-15f9404c30b6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'e6570417-4aa3-4f24-84b1-27a3dae5ed62',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '7ee2eb6b-2bc9-4c5e-b031-7e3ecc89ab37',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '10a6d935-a96b-4531-ae5f-a4a0ccb71681',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '38c280a7-9ab0-49f1-93f8-f009d4b9f5e1',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '9751cc50-ee1c-4c18-944d-8c5c48f70347',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '996f7d66-fd9a-40bb-aa01-960b44fa2f70',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd3e63cf2-3d2c-474c-94ce-cf0b9e740d38',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd968984d-a4e6-496c-a70b-32cd3df424f8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'b1d225c3-7043-4690-870d-44e682ccc70d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'fcad55b2-cf78-486e-9619-f18f4ba34998',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '2daeddd4-0576-4841-870b-efc78d0af81a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6877a202-750b-45ed-a809-3dbf60a8b4d4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '9b7bbf0a-1642-4c24-bf72-e2a8bb83a47d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+Change detected in 'C:\\Users\\ASUS\\Aidil\\sero-system\\backend\\node_modules\\argon2\\prebuilds\\win32-x64\\argon2.glibc.node'
+Restarting 'src/index.js'
+Seroo API listening on port 3000
+request {
+  requestId: '02331e86-4e5e-4878-872d-8da1d58afac2',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 8
+}
+request {
+  requestId: '6d9b7819-b9ca-4410-99de-157bdd20145a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'adb45888-7be7-44ec-aceb-d7120e9b8855',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '72985f57-71f0-4cca-9016-74f602eb6641',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'afc4906d-25fa-4b80-a38f-104f7ab52ec6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'dd2c9ef4-649b-4436-bb94-e5cb379ce959',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'c0619113-4a3b-427e-9a62-223073f02d8d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '6a1f0f40-1ea5-49df-a945-6ba09e31d166',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '362ac6b2-cfe8-4bef-b0f2-e25800d988ea',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '25f1faf0-d127-4a3b-8823-819152fd7f20',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'a1d2ab4e-ac51-425c-ae90-af1c860a4d19',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '2ac5ea9d-a00a-4026-9552-8855e7b222d7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '1013881d-a29b-4347-a2c4-5c15070d7894',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'cbc28d8b-2154-4236-8270-daed0e39754a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd1503757-dfd1-4234-bdc0-ac4f80ac3f67',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd88f7320-2394-4940-add2-942eca3833f4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '2523d1a8-0388-46e9-92ae-d9aea5c506b6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '36c2b223-82fc-45b6-a844-9add89fb8eb7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'c4045fd5-90e9-4278-9946-cea82d2d2f2d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'a9a01c87-721e-406d-aa17-ca410f909a31',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '4b2a734b-52fb-415d-a787-d1e4e3c6a343',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '3b8bc190-674f-4c22-bc4d-ae451f059f79',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'e88e7871-e131-4f1d-828d-b64ac2f303c9',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '38d09b2a-55fa-411d-90c4-622fd1c78ffd',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '1563937d-f5d4-4f11-a4c6-3c853fc3545e',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '1f8ae9f4-e8ca-46fe-b99f-873cb9f2aac1',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'ac624e4b-415b-4a9e-b06c-fef92e6650e8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ee43176a-c66b-46bd-ba9e-d94b562c7430',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6e5a7fe0-672f-476a-9790-b87a90199c61',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'f7f9fc6c-e4ca-4416-b5f4-23d862dc55aa',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'add9575c-744a-44ab-ac8b-b855fb18b3bb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '51457929-e699-429f-9e1b-2d611ebe9e23',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'b045e43c-3d87-4d55-b1d5-0333b8b4d8e8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'e64331ea-6494-46ef-b506-307805b54e6e',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5f501d6c-c86f-4abe-b29f-3665d4949ead',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'fe77e4a4-5f55-4dfe-b09b-199c119663f7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'bac694d7-1cc0-474d-a4a3-59238b926dd5',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ae21d6e8-3952-441c-af31-5692d234b75c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'ae6f6fda-74b0-44e5-91a6-29ef23bbc6ca',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '34855ceb-b60e-44b5-87d1-79ea065a2ff9',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '0446333f-c2a8-4730-a182-f937693d8133',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '55fdc8f5-f3fa-4a78-ab7e-5fcee8de7cae',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '63299e63-1f76-40f7-b782-bea2ed3e84a7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'c1eb0e8f-85e4-451d-ac18-00481a762780',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '17a74304-520b-4642-a00f-301f5cef4150',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '62b9f4ef-c806-45b0-8fd6-7e04e9ce3d5d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5aa25ac6-7939-4a3c-ac7f-de414d5c46c6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '33e06fc8-42b3-4113-9027-65ae8a0895c3',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '257468fd-57ee-458a-b2f3-459bfdf89a31',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b9620863-5464-4b03-8d27-ffa0d379c434',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'e2c8ef73-3d5f-4bd0-b94e-c3ccdfaadad7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'bc090f69-c13f-41d3-803c-5fb17cae1c46',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'a572e89c-060b-439e-8895-0d4d004e53e5',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'e8a90444-2a7d-4542-8b0f-dd08999912bd',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '71c32bd7-d722-493f-97ff-88878813c82a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '58bb7f32-5e21-4f93-a879-6a4f5ad9dd9a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd0a7b3d0-9204-49f1-8396-8815f85e8ba2',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '41976cb9-e978-48a5-b79b-83d76da45a87',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '4ce1bebe-e269-4c6e-8d53-a10dd92ce8b8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'dcd4034c-7936-4283-a1d6-fdc8ff8ec079',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5d9f3759-d8e5-4ddd-8050-2c97a1814e4e',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ee6115fb-d0ca-4d4e-8395-059a991ad855',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd3a3ea51-4552-4651-88d3-3c7a1396590a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b9dd2727-cf08-461e-9f74-06453d0bcb3f',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '58a4c713-c132-4dc5-a78e-b94d1c1520a8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'b58edf1e-7c6f-496f-a6c6-da4f704b4c88',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '92fdbcc0-29f0-41b7-8344-349480efd5f7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6793848c-c95c-4fcf-8e3e-97dda37189eb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '66e4bbe0-72c6-4938-b9aa-b74345d92709',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '08c59c21-c5a8-46b2-aca8-de5629eddf81',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'cc3dd5b1-c8c2-4a82-8916-eb0774e1028f',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '33ecf696-3020-439a-bac0-41d337f44de0',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6597ab28-3e75-4e26-b705-8277772e5260',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '468173a0-4f3a-4f5e-b197-641533bda733',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd206ecd4-a819-4300-afe0-95721689fbb1',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '431a5787-3dea-448d-adb9-3283e74c0845',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '3c7cb791-bb3e-4401-a884-6987dc6b8b8c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b5768718-ee10-4048-b952-b50228092be0',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ef254eab-0f1c-4399-b16c-f071ca721ae0',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '51fc5dba-3d94-4eaf-9778-f1265bf6bb34',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '1546d0bf-cb55-42c7-b6a8-ad93099720c4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '953ff1f9-bf34-4adc-97e6-729850c68dbc',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd5979276-2751-4c1a-9fa6-4788b2b7ec8d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd0f9f84a-264b-4c58-b838-1b97ca772e1c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ce53a004-5c58-47f7-a66b-0fc9db5c92b6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'a6f99cff-85d5-4886-98ac-dc1dc22f72b1',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'bc291c7c-292a-445b-b8bf-eea8ababd2d4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '51dff4fe-5ced-4298-a357-b8e6d0977f8b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'fc9bfe2c-92be-46db-817e-438142ef2e2d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd0c0e6aa-bd8d-41d5-bf85-55355f8cf349',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'ce11df3b-63ec-4184-8682-dac4b63c7492',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'e581884b-f8f7-40fe-8c9f-871c29779a2b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '95d525ae-19bc-44ea-90e0-2df4ad93ae5c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '3368ef48-e8cd-4c22-83a0-3b68c44c4d2b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '195a70a3-cfeb-4d90-ba4a-744aed188929',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '78aeb855-eb5a-46f2-9684-70a314de04c0',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '258410d1-4007-41f0-96ea-d99c81b26e4c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6550f9f4-eb17-4c6c-b925-ae1adb29a5b4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'eabfd19f-b1b0-4877-9932-c8ed9da6a04a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'f1d42c1f-1ea8-438a-9330-05b9549b3ec0',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd4dd816f-e0c2-4585-9869-125611978403',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '0543fb65-b197-4f39-9bf3-fdf511b1c043',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'bb27ac61-342d-4bdc-b875-e60c5382c53c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '43a2f503-cd2e-4501-8330-7aaba1e8642c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '7605e5d0-f8fe-4b8c-93fa-817cbd4b39ee',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '03fba002-6ca4-4531-855c-0679c384b5a6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '0adcf878-f3cf-4720-9ed0-bf900c1522f4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'ae613732-e8e6-43fd-a9b3-da1650319f5c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'b5b41043-c4ef-406c-ab37-b9c90f27117e',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd4027713-f12d-4528-aaa8-acf113cff5f7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '34620a79-6dd0-4ebf-b434-351aef4b3e19',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '3535acfb-5997-4cd6-b30a-21d9b9584e0b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'e42b31a5-718d-4fe9-984b-960247d39091',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '1161aa70-45d4-422d-990b-24f609453de5',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '6bfdabe8-3003-4a94-a8e4-083018d7a43a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '2caa3e29-d3b4-4cf2-bb2f-3671c5efc619',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '4075ed20-0244-4f55-b513-919e29eb517a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5ab006b1-f6a8-4cdd-8c9e-74a2fcd5362a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '08fb7f4d-33f7-4ab9-afcc-7692f498bff6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'f3e14293-b119-48e8-951a-d7150e4ae84d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'd69298e7-7cb3-4cdf-b732-fc2260674c57',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '39b39b3b-a39b-4c2a-a256-55b32d6a7521',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b8ba15af-f39b-44c6-aae1-8d9e851da7f7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b6e3251c-7104-40a3-9ce1-3d5e0af9ea4a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5ce9fc75-6d2d-4aed-9de3-732b7b0eccbf',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '56fbd0d1-fd91-489a-9fd7-b63553aaf3be',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5d78ab65-c2c4-41b1-a25f-ef0b886582fe',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5a676b47-2ddd-4249-86aa-a0aeb67af09a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '8fcbe2f2-5ab7-496f-ab22-0a1403ece0b8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '94c24e1f-b48e-4aba-b165-d181bfdf1107',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b0a3802a-2ad1-4413-b596-283dbec6a747',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '48ad939a-d20a-43b6-bb26-7b663dc862d9',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'a772aeba-c18e-426b-b215-087449ae7d81',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'c87bf944-33ac-423d-8b1e-10f9f5b66a42',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '8ddbc76e-d1c5-4ba8-bff3-aad223377875',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'f9a4d081-470c-4b54-80bd-db88524919d8',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '870f21bf-6283-4707-a51d-5fc67ca34bab',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'f38f9198-c51f-43db-8d57-fccc741546fb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '77fafbfa-4d1c-4fdc-b586-b39ee40c171e',
   method: 'POST',
-  path: '/api/v1/outlets/outlet-rumbai/closings',
-  status: 201,
-  durationMs: 56
-}
-request {
-  requestId: '26441dd3-e499-40eb-bdf5-6521e22bcd61',
-  method: 'PATCH',
-  path: '/api/v1/outlets/outlet-rumbai/closings/cmwwiruq30024ucdgfmksaayi/cash-difference',
+  path: '/api/v1/auth/login',
   status: 200,
-  durationMs: 21
+  durationMs: 460
 }
 request {
-  requestId: 'b2bd7494-58fa-4635-8b75-6da1364ab640',
+  requestId: 'cfff64d1-96d3-4cbe-ba8a-58af3010e433',
   method: 'GET',
-  path: '/api/v1/outlets/outlet-rumbai/closings',
+  path: '/api/v1/outlets/outlet-rumbai/reports/monthly',
   status: 200,
-  durationMs: 17
+  durationMs: 141
 }
 request {
-  requestId: '012f2aa1-ce72-4483-8105-b71b11b21bdf',
+  requestId: '2d37d4d9-dcfc-4986-8f9b-60669ccc9f2c',
   method: 'GET',
-  path: '/health/ready',
+  path: '/health',
   status: 200,
-  durationMs: 5
+  durationMs: 1
+}
+request {
+  requestId: '153a466d-c812-4c65-8328-35ebd5ca7398',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '6d130fd4-bac4-4e68-9a53-600cbd705a76',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6a9dee78-754f-4866-88b0-db7fb20fa3ed',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '3d9fe197-343b-427c-b031-e60839097d51',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'a9eb0953-63b5-40a2-a835-08715b7f2e35',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '587b6c02-f59c-429e-b34d-a296c2e9a1cb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5a23d2a6-3dc7-49ae-a574-a007cb1eba83',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '89791270-29b5-4e15-81ff-8ab6d3d8a5b2',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '935c77cf-281b-4f2d-aec9-bb8176d73547',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'b62b9b31-d57e-4850-ba6f-9f1287a90de7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'c26e8626-eb03-494f-a819-c1f180c27f89',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '25493267-198b-463c-ae9a-7f401796f30a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '458e2cc2-bf8b-43ae-8ed3-e0c57b813e48',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '5fc6b478-e278-412d-9d6b-39415c04ba4a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '2810378a-c6f4-4c05-926d-b563f9e22830',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'ba96af85-85e5-42d0-af64-4ac8934fd9b7',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '9c76b8f7-1769-4010-9438-b2478f0d9a5c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '3f037c5e-b916-420f-973a-e6a702cc3816',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'dc6d2cc6-fea1-4b04-bec1-2e05b642437d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd7b758c3-dd82-4cef-a321-b09f33647eeb',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'a02a9bc3-751f-4707-bf45-7eb5d4d4d17a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd2f0f1dc-7c69-4e9d-9301-1f68be2bfb44',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '2fa7f136-5fd7-47a5-b26d-d395e99e465b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'd81795cc-28f0-40fb-b732-2cd9421e1237',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '6d2a435d-ca59-4f9c-9e2e-104aba95065b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'c2e8c8f4-1302-47e7-b0da-9e2fcfb91306',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'f6721264-e278-4d29-8794-48e64b23e82e',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'c0633408-5a4d-4635-ad6c-aebc8afd788c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '1185e1fb-2058-4c0f-bcd9-a909e48c0b0c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '805c6192-7d78-455e-b8c9-47be4f1cf31d',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '9ee1e268-c985-45e3-9781-b26e42e6e897',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '3f981e64-d8e6-4f7c-a9dc-4973e95c1750',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'dcdfdd7b-fc7c-44cf-9ee8-f4903c5c3472',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'c87d1caa-1061-459f-95f3-524c1f48a8e2',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '78530a1e-2ff7-4651-8f31-9abf39a14f5a',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'c02ce88e-3e94-413a-988f-02522b6b01b6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '2f38b23b-5fbf-4bd0-ba97-e5f0e351804f',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: '3f3caaad-cba6-4c81-97cb-b3f545e56812',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '844204cf-14fa-48c4-b366-3d41ec22f52c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '1427ea4b-ef95-4d7c-856b-0028d13a85bf',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'dea7536a-6617-428b-a2bd-15a726e2d384',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '291b09da-0413-4328-9e3a-8825f309a8c4',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '99c2f89c-4717-4bf8-8ad1-ec66abb90b69',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6fb5a662-e42f-4ab8-b4b1-7d3bb7662ee2',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'cc129458-bb72-4c52-a60f-7c2d5c31ea81',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '5b78c72f-1ea4-4985-8250-177ad3bf8134',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '9d967810-813b-4cbb-929a-78454ddf4ee6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: 'f80454e4-ca7e-4174-b6d0-a78cdd11b5d6',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '433fe2be-9173-4785-b235-de5ca6abb1da',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '901c35d5-7c4c-40bb-a42d-486dc639642c',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 1
+}
+request {
+  requestId: 'adc184b1-ac5f-4e2b-a990-d4bc93fd1ecc',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6e07b330-9ea4-4fc4-8d74-ab19d871c40b',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
+}
+request {
+  requestId: '6dcef77c-6605-4759-b5d5-8be07a558a89',
+  method: 'GET',
+  path: '/health',
+  status: 200,
+  durationMs: 0
 }

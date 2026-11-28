@@ -188,15 +188,25 @@ function aggregateReportData(orders, expenses) {
 
     if (Array.isArray(order.items)) {
       for (const item of order.items) {
+        // Item yang dibatalkan sebagian tidak boleh dihitung sebagai penjualan.
+        if (item.cancelledAt) continue;
         const key = `${item.productName}__${item.variantName}`;
         const existing = productSalesMap.get(key) || {
           productVariantId: item.productVariantId,
           productName: item.productName,
           variantName: item.variantName,
           quantity: 0,
+          addOnQuantity: 0,
           total: new Prisma.Decimal("0.00"),
         };
+        const addOnUnitsPerProduct = (item.addOns || []).reduce(
+          (sum, addOn) => sum + (addOn.quantity || 0),
+          0,
+        );
         existing.quantity += item.quantity;
+        // OrderItemAddOn.quantity disimpan per unit produk, jadi total unit topping
+        // untuk baris ini adalah topping per unit dikali jumlah unit produk.
+        existing.addOnQuantity += addOnUnitsPerProduct * item.quantity;
         existing.total = existing.total.add(new Prisma.Decimal(item.subtotal.toString()));
         productSalesMap.set(key, existing);
       }
@@ -209,6 +219,7 @@ function aggregateReportData(orders, expenses) {
       productName: item.productName,
       variantName: item.variantName,
       quantity: item.quantity,
+      addOnQuantity: item.addOnQuantity,
       total: item.total.toFixed(2),
     }))
     .sort((a, b) => b.quantity - a.quantity || Number(b.total) - Number(a.total));

@@ -11,6 +11,7 @@ import { ExpenseError } from "./expenses/errors.js";
 import { createExpenseRoutes } from "./expenses/routes.js";
 import { ReportError } from "./reports/errors.js";
 import { createReportRoutes } from "./reports/routes.js";
+import { createAdminReportRoutes } from "./reports/adminRoutes.js";
 import { ClosingError } from "./closings/errors.js";
 import { createClosingRoutes } from "./closings/routes.js";
 import { DashboardError } from "./dashboard/errors.js";
@@ -23,7 +24,7 @@ import { createOutletAdminRoutes, OutletAdminError } from "./outlets/adminRoutes
 import { AdminAccountError } from "./accounts/errors.js";
 import { createAdminAccountRoutes } from "./accounts/adminRoutes.js";
 import { AuditError } from "./audit/errors.js";
-import { createAuditRoutes } from "./audit/routes.js";
+import { createAuditRoutes, createManagerAuditRoutes } from "./audit/routes.js";
 import { OutletAvailabilityError } from "./catalog/availabilityErrors.js";
 import { createCatalogAvailabilityRoutes } from "./catalog/availabilityRoutes.js";
 import { LossReportError } from "./loss-reports/errors.js";
@@ -43,6 +44,7 @@ export function createApp({
   inventoryOptions = {},
   expenseOptions = {},
   reportOptions = {},
+  adminReportOptions = {},
   closingOptions = {},
   dashboardOptions = {},
   catalogOptions = {},
@@ -172,6 +174,14 @@ export function createApp({
       }),
     );
     app.route(
+      "/api/v1/admin/reports",
+      createAdminReportRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+        ...adminReportOptions,
+      }),
+    );
+    app.route(
       "/api/v1/outlets",
       createClosingRoutes({
         prisma,
@@ -221,6 +231,14 @@ export function createApp({
     app.route(
       "/api/v1/admin",
       createAuditRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+        ...auditOptions,
+      }),
+    );
+    app.route(
+      "/api/v1/outlets",
+      createManagerAuditRoutes({
         prisma,
         accessTokenSecret: authConfig.accessTokenSecret,
         ...auditOptions,
