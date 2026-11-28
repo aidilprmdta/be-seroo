@@ -24,7 +24,7 @@ import { createOutletAdminRoutes, OutletAdminError } from "./outlets/adminRoutes
 import { AdminAccountError } from "./accounts/errors.js";
 import { createAdminAccountRoutes } from "./accounts/adminRoutes.js";
 import { AuditError } from "./audit/errors.js";
-import { createAuditRoutes } from "./audit/routes.js";
+import { createAuditRoutes, createManagerAuditRoutes } from "./audit/routes.js";
 import { OutletAvailabilityError } from "./catalog/availabilityErrors.js";
 import { createCatalogAvailabilityRoutes } from "./catalog/availabilityRoutes.js";
 import { LossReportError } from "./loss-reports/errors.js";
@@ -231,6 +231,14 @@ export function createApp({
     app.route(
       "/api/v1/admin",
       createAuditRoutes({
+        prisma,
+        accessTokenSecret: authConfig.accessTokenSecret,
+        ...auditOptions,
+      }),
+    );
+    app.route(
+      "/api/v1/outlets",
+      createManagerAuditRoutes({
         prisma,
         accessTokenSecret: authConfig.accessTokenSecret,
         ...auditOptions,

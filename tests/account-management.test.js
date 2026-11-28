@@ -42,6 +42,7 @@ function createDatabase() {
       revokedAt: null,
       expiresAt: new Date(NOW.getTime() + 60 * 60 * 1000),
     })),
+    auditLogs: [],
   };
 
   function withMemberships(user) {
@@ -156,6 +157,12 @@ function createDatabase() {
     async $transaction(callback) {
       return callback(prisma);
     },
+    auditLog: {
+      async create({ data }) {
+        state.auditLogs.push(data);
+        return { id: `audit-${state.auditLogs.length}` };
+      },
+    },
   };
 
   return { prisma, state };
@@ -226,6 +233,11 @@ test("Admin Pusat can list accounts and active outlets and create an outlet-boun
     false,
   );
   assert.equal(database.state.users.at(-1).passwordHash, "argon2id:password-awal-kuat");
+
+  const createdAudit = database.state.auditLogs.at(-1);
+  assert.equal(createdAudit.action, "ACCOUNT_CREATED");
+  assert.equal(createdAudit.outletId, "outlet-b");
+  assert.equal(createdAudit.metadata.email, "new.crew@seroo.id");
 
   const listResponse = await app.request("/api/v1/admin/accounts?page=1&pageSize=2", {
     headers: authenticatedHeaders("admin"),
@@ -338,6 +350,13 @@ test("account creation rejects unsupported roles, inactive outlets, and duplicat
 
 test("deactivation revokes sessions, reactivation does not restore old sessions, and protected accounts stay active", async () => {
   const database = createDatabase();
+  database.state.memberships.push({
+    id: "membership-manager-b",
+    userId: "manager",
+    outletId: "outlet-b",
+    role: "MANAGER",
+  });
+  const membershipCountBefore = database.state.memberships.length;
   const app = createAccountApp(database);
 
   const deactivateResponse = await app.request(
@@ -352,6 +371,9 @@ test("deactivation revokes sessions, reactivation does not restore old sessions,
     },
   );
   assert.equal(deactivateResponse.status, 200);
+  const deactivatedAudit = database.state.auditLogs.at(-1);
+  assert.equal(deactivatedAudit.action, "ACCOUNT_DEACTIVATED");
+  assert.equal(deactivatedAudit.outletId, null);
   assert.equal(database.state.users.find((user) => user.id === "manager").isActive, false);
   const oldManagerSession = database.state.sessions.find(
     (session) => session.userId === "manager",
@@ -375,6 +397,10 @@ test("deactivation revokes sessions, reactivation does not restore old sessions,
     },
   );
   assert.equal(activateResponse.status, 200);
+  const activatedAudit = database.state.auditLogs.at(-1);
+  assert.equal(activatedAudit.action, "ACCOUNT_ACTIVATED");
+  assert.equal(activatedAudit.outletId, null);
+  assert.equal(database.state.memberships.length, membershipCountBefore);
   assert.equal(database.state.users.find((user) => user.id === "manager").isActive, true);
   assert.ok(oldManagerSession.revokedAt);
 

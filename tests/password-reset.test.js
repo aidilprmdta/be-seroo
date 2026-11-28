@@ -55,6 +55,7 @@ function createDatabase() {
     ],
     refreshTokens: [],
     passwordAudits: [],
+    auditLogs: [],
     nextId: 1,
   };
 
@@ -200,6 +201,16 @@ function createDatabase() {
         return audit;
       },
     },
+    auditLog: {
+      async create({ data }) {
+        const log = {
+          id: `audit-log-${state.nextId++}`,
+          ...structuredClone(data),
+        };
+        state.auditLogs.push(log);
+        return log;
+      },
+    },
     async $transaction(callback) {
       return callback(prisma);
     },
@@ -270,6 +281,18 @@ test("Admin Pusat resets Crew, revokes old sessions, and requires a password cha
   const crewCredentials = (await crewLogin.json()).data;
   const secondCrewLogin = await login(app, "crew");
   const secondCrewCredentials = (await secondCrewLogin.json()).data;
+  state.outlets.push({
+    id: "outlet-b",
+    name: "Seroo Panam",
+    code: "SR-PANAM",
+    isActive: true,
+  });
+  state.memberships.push({
+    id: "membership-crew-b",
+    userId: "crew",
+    outletId: "outlet-b",
+    role: "CREW",
+  });
   const originalMemberships = state.memberships.filter(
     (membership) => membership.userId === "crew",
   );
@@ -282,6 +305,9 @@ test("Admin Pusat resets Crew, revokes old sessions, and requires a password cha
 
   assert.equal(reset.status, 200);
   assert.match(temporaryPassword, /^[A-Za-z0-9_-]{24}$/);
+  const resetAudit = state.auditLogs.at(-1);
+  assert.equal(resetAudit.action, "PASSWORD_RESET");
+  assert.equal(resetAudit.outletId, null);
   assert.equal(
     state.users.find((user) => user.id === "crew").passwordHash,
     `argon2id:${temporaryPassword}`,

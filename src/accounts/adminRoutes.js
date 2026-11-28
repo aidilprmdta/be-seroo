@@ -341,7 +341,9 @@ export function createAdminAccountRoutes({
     await writeAuditLog(prisma, {
       actorUserId: auth.userId,
       sessionId: auth.sessionId,
-      outletId: account.memberships?.[0]?.outlet?.id,
+      // Event status akun tidak punya konteks outlet eksplisit; jangan menebak
+      // dari urutan membership agar audit Manager tidak salah atribusi.
+      outletId: null,
       action: isActive ? "ACCOUNT_ACTIVATED" : "ACCOUNT_DEACTIVATED",
       resourceType: "User",
       resourceId: userId,
@@ -423,7 +425,8 @@ export function createAdminAccountRoutes({
     await writeAuditLog(prisma, {
       actorUserId: auth.userId,
       sessionId: auth.sessionId,
-      outletId: currentAccount.memberships?.[0]?.outlet?.id,
+      // Reset password bersifat akun, bukan outlet; outletId sengaja null.
+      outletId: null,
       action: "PASSWORD_RESET",
       resourceType: "User",
       resourceId: userId,

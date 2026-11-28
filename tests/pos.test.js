@@ -180,6 +180,17 @@ function createPosDatabase(role = "CREW") {
         Object.assign(order, data);
         return order;
       },
+      async updateMany({ where, data }) {
+        const order = state.orders.find(
+          (item) =>
+            item.id === where.id &&
+            (where.outletId === undefined || item.outletId === where.outletId) &&
+            (where.status === undefined || item.status === where.status),
+        );
+        if (!order) return { count: 0 };
+        Object.assign(order, data);
+        return { count: 1 };
+      },
     },
     orderItem: {
       async update({ where, data }) {
@@ -191,6 +202,22 @@ function createPosDatabase(role = "CREW") {
           }
         }
         return null;
+      },
+      async updateMany({ where, data }) {
+        for (const order of state.orders) {
+          const item = order.items.find((entry) => {
+            if (entry.id !== where.id) return false;
+            if (where.cancelledAt === undefined) return true;
+            return where.cancelledAt === null
+              ? !entry.cancelledAt
+              : entry.cancelledAt === where.cancelledAt;
+          });
+          if (item) {
+            Object.assign(item, data);
+            return { count: 1 };
+          }
+        }
+        return { count: 0 };
       },
     },
     orderPayment: {

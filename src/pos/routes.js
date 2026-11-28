@@ -9,6 +9,7 @@ import { withFinancialLock } from "../closings/service.js";
 import { PosError } from "./errors.js";
 
 const ORDER_INCLUDE = {
+  crew: { select: { id: true, name: true } },
   items: {
     include: { addOns: true },
   },
@@ -304,6 +305,7 @@ function orderDto(order) {
     status: order.status,
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
+    crew: order.crew ?? null,
     verifiedAt: order.verifiedAt
       ? order.verifiedAt instanceof Date
         ? order.verifiedAt.toISOString()
@@ -1235,6 +1237,29 @@ export function createPosRoutes({
     // Acquire financial lock within the transaction (lock covers all financial ops per outlet)
     const result = await prisma.$transaction(async (tx) => {
       return withFinancialLock(tx, outletId, async () => {
+        // Revalidasi di dalam lock: status dan data order bisa berubah sejak request masuk.
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          include: {
+            items: {
+              include: { addOns: true },
+            },
+            payments: true,
+          },
+        });
+
+        if (!order || order.outletId !== outletId) {
+          throw new PosError("ORDER_NOT_FOUND", 404, "Transaksi tidak ditemukan.");
+        }
+
+        if (order.status !== "COMPLETED") {
+          throw new PosError(
+            "ORDER_ALREADY_CANCELLED",
+            400,
+            "Transaksi ini sudah dibatalkan sebelumnya.",
+          );
+        }
+
         // Check if period is closed (financial lock ensures serialization)
         const dateStr = toJakartaDateString(order.createdAt);
         const monthStr = toJakartaMonthString(order.createdAt);
@@ -1305,9 +1330,9 @@ export function createPosRoutes({
           });
         }
 
-        // 3. Update pesanan menjadi CANCELLED & REFUNDED
-        const updatedOrder = await tx.order.update({
-          where: { id: order.id },
+        // 3. Guard kondisional: hanya satu request yang boleh mengubah status.
+        const guard = await tx.order.updateMany({
+          where: { id: order.id, outletId, status: "COMPLETED" },
           data: {
             status: "CANCELLED",
             paymentStatus: "REFUNDED",
@@ -1316,6 +1341,16 @@ export function createPosRoutes({
             cancellationReason: body.reason,
             isWasteRecorded: Boolean(body.recordWaste),
           },
+        });
+        if (guard.count !== 1) {
+          throw new PosError(
+            "ORDER_ALREADY_CANCELLED",
+            409,
+            "Transaksi ini sudah diproses oleh permintaan lain.",
+          );
+        }
+        const updatedOrder = await tx.order.findUnique({
+          where: { id: order.id },
           include: ORDER_INCLUDE,
         });
 
@@ -1342,31 +1377,32 @@ export function createPosRoutes({
           }
         }
 
-        return updatedOrder;
-      });
-    });
+        // 5. Audit ditulis di transaksi yang sama agar tidak ada commit tanpa jejak.
+        await writeAuditLog(tx, {
+          actorUserId: auth.userId,
+          sessionId: auth.sessionId,
+          outletId,
+          action: "ORDER_CANCELLED",
+          resourceType: "Order",
+          resourceId: order.id,
+          metadata: {
+            reason: body.reason,
+            recordWaste: body.recordWaste,
+            paymentStatus: "REFUNDED",
+            status: "CANCELLED",
+          },
+        });
 
-    await writeAuditLog(prisma, {
-      actorUserId: auth.userId,
-      sessionId: auth.sessionId,
-      outletId,
-      action: "ORDER_CANCELLED",
-      resourceType: "Order",
-      resourceId: order.id,
-      metadata: {
-        reason: body.reason,
-        recordWaste: body.recordWaste,
-        paymentStatus: "REFUNDED",
-        status: "CANCELLED",
-      },
+        return { order: updatedOrder, cancelTime };
+      });
     });
 
     return c.json({
       success: true,
       data: {
-        order: orderDto(result),
+        order: orderDto(result.order),
         cancellation: {
-          cancelledAt: cancelTime.toISOString(),
+          cancelledAt: result.cancelTime.toISOString(),
           cancelledBy: { id: auth.userId },
           reason: body.reason,
           recordWaste: body.recordWaste,
@@ -1407,61 +1443,74 @@ export function createPosRoutes({
         );
       }
 
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        include: { items: true, payments: true },
-      });
-      if (!order || order.outletId !== outletId) {
-        throw new PosError("ORDER_NOT_FOUND", 404, "Transaksi tidak ditemukan.");
-      }
-      if (order.status !== "COMPLETED") {
-        throw new PosError(
-          "ORDER_NOT_EDITABLE",
-          400,
-          "Pembatalan per item hanya untuk transaksi yang masih aktif.",
-        );
-      }
-      if (order.paymentStatus === "LUNAS") {
-        throw new PosError(
-          "FULL_CANCELLATION_REQUIRED",
-          409,
-          "Pesanan sudah lunas. Gunakan pembatalan pesanan penuh agar pembayaran tercatat sebagai refund.",
-        );
-      }
-
-      const targetItem = order.items.find((item) => item.id === itemId);
-      if (!targetItem) {
-        throw new PosError("ITEM_NOT_FOUND", 404, "Item tidak ditemukan pada transaksi ini.");
-      }
-      if (targetItem.cancelledAt) {
-        throw new PosError("ITEM_ALREADY_CANCELLED", 409, "Item ini sudah dibatalkan.");
-      }
-
-      const remainingItems = order.items.filter(
-        (item) => item.id !== itemId && !item.cancelledAt,
-      );
-      if (remainingItems.length === 0) {
-        throw new PosError(
-          "FULL_CANCELLATION_REQUIRED",
-          400,
-          "Item terakhir tidak bisa dibatalkan sendiri. Gunakan pembatalan pesanan penuh.",
-        );
-      }
-      if ((order.payments || []).length > 1) {
-        throw new PosError(
-          "SPLIT_PAYMENT_ITEM_CANCEL_UNSUPPORTED",
-          409,
-          "Transaksi split payment tidak mendukung pembatalan per item. Batalkan seluruh pesanan.",
-        );
-      }
-
-      const newSubtotal = remainingItems.reduce(
-        (sum, item) => sum.add(item.subtotal),
-        new Prisma.Decimal(0),
-      );
-
       const result = await prisma.$transaction(async (tx) => {
         return withFinancialLock(tx, outletId, async () => {
+          // Revalidasi di dalam lock agar dua pembatalan item tidak saling menimpa.
+          const order = await tx.order.findUnique({
+            where: { id: orderId },
+            include: { items: true, payments: true },
+          });
+          if (!order || order.outletId !== outletId) {
+            throw new PosError(
+              "ORDER_NOT_FOUND",
+              404,
+              "Transaksi tidak ditemukan.",
+            );
+          }
+          if (order.status !== "COMPLETED") {
+            throw new PosError(
+              "ORDER_NOT_EDITABLE",
+              400,
+              "Pembatalan per item hanya untuk transaksi yang masih aktif.",
+            );
+          }
+          if (order.paymentStatus === "LUNAS") {
+            throw new PosError(
+              "FULL_CANCELLATION_REQUIRED",
+              409,
+              "Pesanan sudah lunas. Gunakan pembatalan pesanan penuh agar pembayaran tercatat sebagai refund.",
+            );
+          }
+
+          const targetItem = order.items.find((item) => item.id === itemId);
+          if (!targetItem) {
+            throw new PosError(
+              "ITEM_NOT_FOUND",
+              404,
+              "Item tidak ditemukan pada transaksi ini.",
+            );
+          }
+          if (targetItem.cancelledAt) {
+            throw new PosError(
+              "ITEM_ALREADY_CANCELLED",
+              409,
+              "Item ini sudah dibatalkan.",
+            );
+          }
+
+          const remainingItems = order.items.filter(
+            (item) => item.id !== itemId && !item.cancelledAt,
+          );
+          if (remainingItems.length === 0) {
+            throw new PosError(
+              "FULL_CANCELLATION_REQUIRED",
+              400,
+              "Item terakhir tidak bisa dibatalkan sendiri. Gunakan pembatalan pesanan penuh.",
+            );
+          }
+          if ((order.payments || []).length > 1) {
+            throw new PosError(
+              "SPLIT_PAYMENT_ITEM_CANCEL_UNSUPPORTED",
+              409,
+              "Transaksi split payment tidak mendukung pembatalan per item. Batalkan seluruh pesanan.",
+            );
+          }
+
+          const newSubtotal = remainingItems.reduce(
+            (sum, item) => sum.add(item.subtotal),
+            new Prisma.Decimal(0),
+          );
+
           const dateStr = toJakartaDateString(order.createdAt);
           const monthStr = toJakartaMonthString(order.createdAt);
           const dailyClosing = await tx.closingRecord?.findUnique?.({
@@ -1498,14 +1547,21 @@ export function createPosRoutes({
           }
 
           const cancelledAt = now();
-          await tx.orderItem.update({
-            where: { id: targetItem.id },
+          const guard = await tx.orderItem.updateMany({
+            where: { id: targetItem.id, cancelledAt: null },
             data: {
               cancelledAt,
               cancelledById: auth.userId,
               cancellationReason: reason,
             },
           });
+          if (guard.count !== 1) {
+            throw new PosError(
+              "ITEM_ALREADY_CANCELLED",
+              409,
+              "Item ini sudah diproses oleh permintaan lain.",
+            );
+          }
 
           // Pembayaran QRIS yang belum diverifikasi ikut disesuaikan nominalnya.
           if (order.payments.length === 1) {
@@ -1518,39 +1574,47 @@ export function createPosRoutes({
             }
           }
 
-          return tx.order.update({
+          const updatedOrder = await tx.order.update({
             where: { id: order.id },
             data: { subtotal: newSubtotal, total: newSubtotal },
             include: ORDER_INCLUDE,
           });
-        });
-      });
 
-      await writeAuditLog(prisma, {
-        actorUserId: auth.userId,
-        sessionId: auth.sessionId,
-        outletId,
-        action: "ORDER_ITEM_CANCELLED",
-        resourceType: "OrderItem",
-        resourceId: targetItem.id,
-        metadata: {
-          orderId: order.id,
-          reason,
-          previousSubtotal: order.subtotal.toString(),
-          newSubtotal: newSubtotal.toString(),
-        },
+          // Audit ditulis di transaksi yang sama agar tidak ada commit tanpa jejak.
+          await writeAuditLog(tx, {
+            actorUserId: auth.userId,
+            sessionId: auth.sessionId,
+            outletId,
+            action: "ORDER_ITEM_CANCELLED",
+            resourceType: "OrderItem",
+            resourceId: targetItem.id,
+            metadata: {
+              orderId: order.id,
+              reason,
+              previousSubtotal: order.subtotal.toString(),
+              newSubtotal: newSubtotal.toString(),
+            },
+          });
+
+          return {
+            order: updatedOrder,
+            itemId: targetItem.id,
+            previousTotal: order.total.toString(),
+            newSubtotal,
+          };
+        });
       });
 
       return c.json({
         success: true,
         data: {
-          order: orderDto(result),
+          order: orderDto(result.order),
           itemCancellation: {
-            itemId: targetItem.id,
+            itemId: result.itemId,
             reason,
             cancelledById: auth.userId,
-            previousTotal: order.total.toString(),
-            newTotal: newSubtotal.toString(),
+            previousTotal: result.previousTotal,
+            newTotal: result.newSubtotal.toString(),
           },
         },
       });
